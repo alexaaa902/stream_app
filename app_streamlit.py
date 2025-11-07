@@ -14,7 +14,8 @@ def _slug(s: str) -> str:
 st.set_page_config(page_title="Risk alerts & summaries — ProcureSight", layout="wide")
 
 # ================== CONFIG ==================
-DEFAULT_BASE = "/content/drive/MyDrive/artifacts_2stage_hard"
+#DEFAULT_BASE = "/content/drive/MyDrive/artifacts_2stage_hard"
+DEFAULT_BASE = "data"
 MIN_COUNT_DEFAULT = 100
 TOP_K_DEFAULT     = 15
 HIST_BINS_DEFAULT = 40

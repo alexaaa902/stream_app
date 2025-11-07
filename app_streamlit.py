@@ -1,4 +1,5 @@
-# app_streamlit.py — Early warnings & aggregated risk summaries — ProcureSight 
+# app_streamlit.py — Early warnings & aggregated risk summaries — ProcureSight
+%%writefile app_streamlit.py
 import os, io, zipfile, re, json
 import numpy as np
 import pandas as pd
@@ -14,8 +15,7 @@ def _slug(s: str) -> str:
 st.set_page_config(page_title="Risk alerts & summaries — ProcureSight", layout="wide")
 
 # ================== CONFIG ==================
-#DEFAULT_BASE = "/content/drive/MyDrive/artifacts_2stage_hard"
-DEFAULT_BASE = "data"
+DEFAULT_BASE = "/content/drive/MyDrive/artifacts_2stage_hard"
 MIN_COUNT_DEFAULT = 100
 TOP_K_DEFAULT     = 15
 HIST_BINS_DEFAULT = 40
@@ -37,22 +37,36 @@ px.defaults.color_discrete_sequence = [BRAND["primary"], BRAND["accent"], "#7A78
 
 # ================== FASTAPI CONFIG (dynamic) ==================
 def _get_api_base() -> str:
-    if os.environ.get("API_BASE"):
-        return os.environ["API_BASE"].strip()
-    for path in ["/content/cf_api_bg.log", "/content/cf_api_log.txt", "/content/cf_api.log"]:
-        try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
-            m = re.search(r"https://[0-9A-Za-z\.-]+\.trycloudflare\.com", text)
-            if m:
-                return m.group(0)
-        except Exception:
-            pass
+    import os, re, streamlit as st
+
+    # 1️⃣ Αν τρέχεις σε Colab (με Cloudflare tunnel)
+    if os.path.exists("/content"):
+        for path in [
+            "/content/cf_api_bg.log",
+            "/content/cf_api_log.txt",
+            "/content/cf_api.log"
+        ]:
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+                m = re.search(r"https://[0-9A-Za-z\.-]+\.trycloudflare\.com", text)
+                if m:
+                    return m.group(0).rstrip("/")
+            except Exception:
+                pass
+
+    # 2️⃣ Αν έχει οριστεί μεταβλητή περιβάλλοντος ή secret
+    api_env = os.getenv("API_BASE")
+    if api_env:
+        return api_env.rstrip("/")
     try:
-        return str(st.secrets["API_BASE"]).strip()
+        if hasattr(st, "secrets") and "API_BASE" in st.secrets:
+            return st.secrets["API_BASE"].strip().rstrip("/")
     except Exception:
         pass
-    return "http://127.0.0.1:8000"
+
+    # 3️⃣ Προεπιλεγμένο (Render)
+    return "https://procuresight-api.onrender.com"
 
 DEFAULT_API_BASE = _get_api_base()
 

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>ProcureSight API — ReDoc</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin:0; padding:0; }
+    .topbar { 
+      position:fixed; z-index:10; top:0; left:0; right:0; 
+      background:#0B5FFF; color:#fff; padding:10px 16px; 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      display:flex; align-items:center; justify-content:space-between;
+      box-shadow:0 2px 8px rgba(0,0,0,.12)
+    }
+    .brand { font-weight:800; letter-spacing:.2px }
+    .topbar a { color:#fff; opacity:.9; text-decoration:none; margin-left:14px; }
+    .wrap { margin-top:54px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">ProcureSight API</div>
+    <div>
+      <a href="openapi.json" target="_blank" rel="noopener">Download OpenAPI (JSON)</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <!-- ReDoc will inject here -->
+    <redoc spec-url="openapi.json" hide-download-button="false"></redoc>
+  </div>
+
+  <!-- ReDoc via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 # app_streamlit.py — Early warnings & aggregated risk summaries — ProcureSight
+%%writefile app_streamlit.py
 import os, io, zipfile, re, json
 import numpy as np
 import pandas as pd
@@ -14,7 +15,7 @@ def _slug(s: str) -> str:
 st.set_page_config(page_title="Risk alerts & summaries — ProcureSight", layout="wide")
 
 # ================== CONFIG ==================
-DEFAULT_BASE = "data"
+DEFAULT_BASE = "/content/drive/MyDrive/artifacts_2stage_hard"
 MIN_COUNT_DEFAULT = 100
 TOP_K_DEFAULT     = 15
 HIST_BINS_DEFAULT = 40
@@ -69,19 +70,25 @@ def _get_api_base() -> str:
 
 DEFAULT_API_BASE = _get_api_base()
 
+# 1) cache με dependency στο current_api_base
 @st.cache_resource
-def get_api_base():
+def get_api_base(current_api_base: str) -> str:
+    return current_api_base
+
+def _current_api_base() -> str:
+    # παίρνουμε το API από session_state ή από DEFAULT_API_BASE
     return st.session_state.get("api_base", DEFAULT_API_BASE)
 
+# 2) Χρήση ΠΑΝΤΑ με όρισμα
 def api_predict(payload: dict, tau: float | None = None) -> dict:
-    base = get_api_base()
+    base = get_api_base(_current_api_base())
     params = {"tau": tau} if tau is not None else {}
     r = requests.post(f"{base}/predict", json=payload, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
 
 def api_predict_batch(rows: list[dict], tau: float | None = None) -> list[dict]:
-    base = get_api_base()
+    base = get_api_base(_current_api_base())
     params = {"tau": tau} if tau is not None else {}
     try:
         r = requests.post(f"{base}/predict_batch", json=rows, params=params, timeout=90)
@@ -91,6 +98,7 @@ def api_predict_batch(rows: list[dict], tau: float | None = None) -> list[dict]:
         return r.json()
     except Exception:
         return [api_predict(d, tau=tau) for d in rows]
+
 
 # ========= MAPPINGS =========
 CPV_MAPPING = {
@@ -895,7 +903,14 @@ else:
 # ================== FASTAPI INTEGRATION UI ==================
 st.divider()
 st.header("⚡ Live API predictions (FastAPI)")
-api_base_in = st.text_input("API Base URL", value=DEFAULT_API_BASE, help="π.χ. http://127.0.0.1:8000 ή tunnel URL.")
+api_base_in = st.text_input("API Base URL", value=DEFAULT_API_BASE)
+
+if st.session_state.get("_last_api_base") != api_base_in:
+    st.session_state["_last_api_base"] = api_base_in
+    try:
+        get_api_base.clear()      # Streamlit 1.25+
+    except Exception:
+        st.cache_resource.clear() # fallback
 st.session_state["api_base"] = api_base_in
 
 c_conn = st.columns([1,1,2,2])

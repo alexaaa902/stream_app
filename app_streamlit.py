@@ -432,12 +432,10 @@ file_list_all = list_csvs(base_dir, recursive=scan_recursive)
 file_list = file_list_all if show_agg else [p for p in file_list_all if not is_aggregated_csv(p)]
 if not file_list:
     st.info("No CSV files found in the folder. Change the 'Base directory' or enable scanning subfolders.")
-options = ["— Select from folder —"] + file_list
 def _format_path(p: str) -> str:
     if p == "— Select from folder —": return p
     try: return os.path.relpath(p, base_dir)
     except Exception: return os.path.basename(p)
-pick = st.selectbox("Pick a CSV from folder", options, index=0, format_func=_format_path, help="Choose a file.")
 
 # ---------- STYLE: ίδιες επικεφαλίδες και «card» εμφάνιση ----------
 st.markdown("""
@@ -491,29 +489,6 @@ if df_raw.empty:
     banner("CSV is empty.", "warn")
     st.stop()
 
-banner(f"Loaded: <b>{label}</b> — rows: <b>{len(df_raw):,}</b>", "ok")
-
-# ---------- Load ----------
-payload = None
-label = None
-
-# 1) Αν ο χρήστης ανέβασε CSV, δώσε προτεραιότητα σε αυτό
-if uploaded_file is not None:
-    payload = ("bytes", uploaded_file.getvalue())
-    label = uploaded_file.name
-
-# 2) Αλλιώς πάρε από το φάκελο
-elif pick and pick != "— Select from folder —":
-    payload = ("path", pick)
-    label = _format_path(pick)
-
-# 3) Αν δεν έχουμε τίποτα, σταμάτα ευγενικά
-if payload is None:
-    banner("Select a CSV from the folder **or upload one** to begin.", "info")
-    st.stop()
-
-# 4) Διαβάζουμε το CSV (από bytes ή path)
-df_raw = read_csv_any_cached(payload[1], is_bytes=(payload[0] == "bytes"))
 banner(f"Loaded: <b>{label}</b> — rows: <b>{len(df_raw):,}</b>", "ok")
 
 

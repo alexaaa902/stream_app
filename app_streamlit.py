@@ -503,7 +503,47 @@ if df_raw.empty:
     st.stop()
 
 banner(f"Loaded: <b>{label}</b> — rows: <b>{len(df_raw):,}</b>", "ok")
+# ===== CSV schema validation (βάλε το αμέσως μετά το "Loaded: ...") =====
 
+# 1) Αν είναι ήδη outputs (predictions) ή aggregated, άσ’ το να προχωρήσει — θα το χειριστούν τα αντίστοιχα flows
+cols_lower = {c.lower() for c in df_raw.columns}
+looks_like_outputs   = any(k in cols_lower for k in ["predicted_days", "risk_flag", "p_long", "tau", "model_used"])
+looks_like_aggregated= ({"riskpct","risk%","risk_pct"} & cols_lower) and ("count" in cols_lower)
+
+if not looks_like_outputs and not looks_like_aggregated:
+    # 2) Αλλιώς περιμένουμε “raw procurement inputs” για batch prediction.
+    #    ΟΡΙΣΕ εδώ τα minimum που θες να είναι υποχρεωτικά:
+    REQUIRED_MIN = {
+        "tender_country",
+        "tender_mainCpv",
+        "tender_year",
+    }
+    # (προαιρετικά: columns που είναι χρήσιμα/καλύτερα να υπάρχουν)
+    NICE_TO_HAVE = {
+        "tender_procedureType",
+        "tender_supplyType",
+        "tender_estimatedPrice_EUR",
+        "lot_bidsCount",
+    }
+
+    missing = [c for c in REQUIRED_MIN if c not in df_raw.columns]
+    if missing:
+        banner(
+            "❌ This CSV doesn’t match the expected procurement inputs.<br>"
+            f"Missing required columns: <b>{', '.join(missing)}</b>.<br>"
+            "Please upload a CSV with the required fields (e.g., tender_country, tender_mainCpv, tender_year).",
+            "error",
+        )
+        st.stop()
+
+    # Προειδοποίηση (όχι stop) για χρήσιμες στήλες που λείπουν
+    missing_nice = [c for c in NICE_TO_HAVE if c not in df_raw.columns]
+    if missing_nice:
+        banner(
+            "ℹ️ Some useful columns are missing and will be assumed/derived if possible: "
+            f"<b>{', '.join(missing_nice)}</b>.",
+            "warn",
+        )
 
 # --- classify dataset type ---
 is_early_warning = False; is_early = False; looks_agg = False

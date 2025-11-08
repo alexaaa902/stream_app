@@ -1,4 +1,3 @@
-
 # app_streamlit.py — Early warnings & aggregated risk summaries — ProcureSight
 import os, io, zipfile, re, json
 import numpy as np
@@ -474,18 +473,28 @@ else:
 
 
 # ---------- Load ----------
-payload = None; label = None
-if pick and pick != "— Select from folder —":
-    payload = ("path", pick); label = _format_path(pick)
+payload = None
+label = None
+
+# 1) Αν ο χρήστης ανέβασε CSV, δώσε προτεραιότητα σε αυτό
+if uploaded_file is not None:
+    payload = ("bytes", uploaded_file.getvalue())
+    label = uploaded_file.name
+
+# 2) Αλλιώς πάρε από το φάκελο
+elif pick and pick != "— Select from folder —":
+    payload = ("path", pick)
+    label = _format_path(pick)
+
+# 3) Αν δεν έχουμε τίποτα, σταμάτα ευγενικά
 if payload is None:
-    banner("Select a CSV from the folder to begin.", "info"); st.stop()
-try:
-    df_raw = read_csv_any_cached(payload[1], is_bytes=(payload[0]=="bytes"))
-    banner(f"Loaded: <b>{label}</b> — rows: <b>{len(df_raw):,}</b>", "ok")
-except Exception as e:
-    banner(f"Could not read CSV: <b>{e}</b>", "error"); st.stop()
-if df_raw.empty:
-    banner("CSV is empty.", "warn"); st.stop()
+    banner("Select a CSV from the folder **or upload one** to begin.", "info")
+    st.stop()
+
+# 4) Διαβάζουμε το CSV (από bytes ή path)
+df_raw = read_csv_any_cached(payload[1], is_bytes=(payload[0] == "bytes"))
+banner(f"Loaded: <b>{label}</b> — rows: <b>{len(df_raw):,}</b>", "ok")
+
 
 # --- classify dataset type ---
 is_early_warning = False; is_early = False; looks_agg = False

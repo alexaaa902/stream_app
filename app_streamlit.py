@@ -439,38 +439,59 @@ def _format_path(p: str) -> str:
     except Exception: return os.path.basename(p)
 pick = st.selectbox("Pick a CSV from folder", options, index=0, format_func=_format_path, help="Choose a file.")
 
-st.markdown("### 📤 Upload your CSV file")
-uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+# ---------- STYLE: ίδιες επικεφαλίδες και «card» εμφάνιση ----------
+st.markdown("""
+<style>
+.section-title {font-size:1.05rem; font-weight:700; margin:.5rem 0 .35rem;}
+.block {padding:.75rem; border:1px solid #e9edf5; border-radius:10px; background:#fff;}
+</style>
+""", unsafe_allow_html=True)
 
-if uploaded_file is not None:
-    if not uploaded_file.name.lower().endswith(".csv"):
-        st.error("❌ Invalid file type. Please upload a .csv file.")
-        st.stop()
+# ---------- PICK FROM FOLDER ----------
+st.markdown('<div class="section-title">Pick a CSV from folder</div>', unsafe_allow_html=True)
+# Προσοχή: label="" για να μην μπαίνει default τίτλος άλλου μεγέθους
+pick = st.selectbox(
+    label="",
+    options=["— Select from folder —"] + file_list,  # χρειάζεται να έχεις ήδη file_list, _format_path
+    index=0,
+    format_func=_format_path,
+    key="pick_csv_from_folder"
+)
 
-if uploaded_file is not None:
+# ---------- UPLOAD ----------
+st.markdown('<div class="section-title">Upload your CSV file</div>', unsafe_allow_html=True)
+uploaded_file = st.file_uploader(label="", type=["csv"], key="upload_csv")
+
+# ---------- Επιλογή πηγής (uploaded έχει προτεραιότητα) ----------
+has_uploaded = uploaded_file is not None
+has_folder   = bool(pick and pick != "— Select from folder —")
+
+if not (has_uploaded or has_folder):
+    st.info("Please upload a CSV file **or** pick one from the folder to begin.")
+    st.stop()
+
+# ---------- Διαβάζουμε CSV & δείχνουμε μόνο «Loaded …» ----------
+label = None
+if has_uploaded:
     try:
-        # Προσπάθησε να διαβάσεις το αρχείο ως CSV
-        df = pd.read_csv(uploaded_file, sep=None, engine="python", encoding_errors="ignore")
-
-        # Έλεγχος ελάχιστων στηλών (προσαρμόζεις όπως θες)
-        required_cols = ["tender_country", "tender_mainCpv", "tender_year"]
-        missing = [c for c in required_cols if c not in df.columns]
-
-        if missing:
-            st.error(f"⚠️ The uploaded file is missing required columns: {', '.join(missing)}")
-        elif df.empty:
-            st.warning("⚠️ The file is empty or contains no valid rows.")
-        else:
-            st.success(f"✅ Loaded file: {uploaded_file.name} — {df.shape[0]:,} rows, {df.shape[1]} columns.")
-            st.dataframe(df.head())
-
-            # Optionally, run batch prediction
-            # result = api_predict_batch(df.to_dict(orient="records"))
+        df_raw = pd.read_csv(uploaded_file, sep=None, engine="python", encoding_errors="ignore")
+        label = uploaded_file.name
     except Exception as e:
         st.error(f"❌ Failed to read CSV file: {e}")
+        st.stop()
 else:
-    st.info("Please upload a CSV file to begin.")
+    try:
+        df_raw = read_csv_any_cached(pick, is_bytes=False)
+        label = _format_path(pick)
+    except Exception as e:
+        st.error(f"❌ Could not read CSV from disk: {e}")
+        st.stop()
 
+if df_raw.empty:
+    banner("CSV is empty.", "warn")
+    st.stop()
+
+banner(f"Loaded: <b>{label}</b> — rows: <b>{len(df_raw):,}</b>", "ok")
 
 # ---------- Load ----------
 payload = None

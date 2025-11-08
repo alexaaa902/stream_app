@@ -1,4 +1,6 @@
+
 # app_streamlit.py — Early warnings & aggregated risk summaries — ProcureSight
+%%writefile app_streamlit.py
 import os, io, zipfile, re, json
 import numpy as np
 import pandas as pd
@@ -438,6 +440,39 @@ def _format_path(p: str) -> str:
     try: return os.path.relpath(p, base_dir)
     except Exception: return os.path.basename(p)
 pick = st.selectbox("Pick a CSV from folder", options, index=0, format_func=_format_path, help="Choose a file.")
+
+st.markdown("### 📤 Upload your CSV file")
+uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+
+if uploaded_file is not None:
+    if not uploaded_file.name.lower().endswith(".csv"):
+        st.error("❌ Invalid file type. Please upload a .csv file.")
+        st.stop()
+
+if uploaded_file is not None:
+    try:
+        # Προσπάθησε να διαβάσεις το αρχείο ως CSV
+        df = pd.read_csv(uploaded_file, sep=None, engine="python", encoding_errors="ignore")
+
+        # Έλεγχος ελάχιστων στηλών (προσαρμόζεις όπως θες)
+        required_cols = ["tender_country", "tender_mainCpv", "tender_year"]
+        missing = [c for c in required_cols if c not in df.columns]
+
+        if missing:
+            st.error(f"⚠️ The uploaded file is missing required columns: {', '.join(missing)}")
+        elif df.empty:
+            st.warning("⚠️ The file is empty or contains no valid rows.")
+        else:
+            st.success(f"✅ Loaded file: {uploaded_file.name} — {df.shape[0]:,} rows, {df.shape[1]} columns.")
+            st.dataframe(df.head())
+
+            # Optionally, run batch prediction
+            # result = api_predict_batch(df.to_dict(orient="records"))
+    except Exception as e:
+        st.error(f"❌ Failed to read CSV file: {e}")
+else:
+    st.info("Please upload a CSV file to begin.")
+
 
 # ---------- Load ----------
 payload = None; label = None

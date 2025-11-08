@@ -13,6 +13,19 @@ def _slug(s: str) -> str:
 
 st.set_page_config(page_title="Risk alerts & summaries — ProcureSight", layout="wide")
 
+# --- JSON safety: αντικατάσταση NaN/±inf με None ---
+def rows_json_safe_from_list(rows: list[dict]) -> list[dict]:
+    import pandas as pd
+    import numpy as np
+    df = pd.DataFrame(rows)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.where(pd.notna(df), None)  # NaN -> None
+    # Αν έχεις datetime, κάν’ τες strings:
+    for c in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[c]):
+            df[c] = df[c].astype("datetime64[ns]").astype(str).where(df[c].notna(), None)
+    return df.to_dict(orient="records")
+
 # ================== CONFIG ==================
 DEFAULT_BASE = "data"
 MIN_COUNT_DEFAULT = 100
@@ -1135,6 +1148,7 @@ with t2:
             st.dataframe(prev, use_container_width=True)
 
             rows = _prepare_rows(df_in)
+            rows = rows_json_safe_from_list(rows)  # <= καθαρισμός NaN/inf -> None
             preds = api_predict_batch(rows, tau=float(tau_batch) if tau_batch else None)
             df_out = pd.concat([df_in.reset_index(drop=True), pd.DataFrame(preds)], axis=1)
 

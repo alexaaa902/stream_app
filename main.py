@@ -42,6 +42,15 @@ except Exception:
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")
 
+@app.get("/")
+def root():
+    return {"message": "ProcureSight API is live"}
+
+# ✅ Health check endpoint (για Render)
+@app.get("/health")
+def health_check():
+    return {"ok": True}
+
 # ---------- Globals / defaults ----------
 features: Dict[str, Any] = {}
 meta: Dict[str, Any] = {}

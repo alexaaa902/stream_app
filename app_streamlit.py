@@ -1,6 +1,5 @@
 
 # app_streamlit.py — Early warnings & aggregated risk summaries — ProcureSight
-%%writefile app_streamlit.py
 import os, io, zipfile, re, json
 import numpy as np
 import pandas as pd

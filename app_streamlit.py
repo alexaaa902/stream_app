@@ -752,6 +752,10 @@ if is_early:
     if show_hist and "predicted_days" in df_f.columns:
         st.markdown("### Distribution of predicted duration (days)")
         st.caption("Binned distribution of predicted days (clipped to [0, 1800]).")
+        bins = st.number_input(
+             "Histogram bins",
+             min_value=10, max_value=200, value=HIST_BINS_DEFAULT, step=5, key="ew_bins"
+        )
         cuts = pd.cut(df_f["predicted_days"].clip(0, 1800), bins=int(bins))
         hist = cuts.value_counts().sort_index()
         labels = [f"[{int(iv.left)}–{int(iv.right)}]" for iv in hist.index.to_list()]
@@ -939,12 +943,6 @@ elif looks_agg:
        mincnt = st.number_input(
         "Min count (rows)",
         min_value=1, max_value=100_000, value=MIN_COUNT_DEFAULT, step=10, key="agg_mincnt"
-    )
-
-    with c_bins:
-        bins = st.number_input(
-        "Histogram bins",
-        min_value=10, max_value=200, value=HIST_BINS_DEFAULT, step=5, key="agg_bins"
     )
 
     # Φιλτράρουμε με βάση το mincnt

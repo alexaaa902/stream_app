@@ -918,9 +918,34 @@ elif looks_agg:
 
     # Chart-specific display settings (μεταφέρουμε τα controls εδώ, ΟΧΙ στο sidebar)
     st.markdown("##### Chart display settings")
-    topk   = st.number_input("Top-K (max groups to show)", min_value=1, max_value=100, value=TOP_K_DEFAULT, key="agg_topk")
-    mincnt = st.number_input("Min count (rows)", min_value=1, max_value=100000, value=MIN_COUNT_DEFAULT, key="agg_mincnt")
-    bins   = st.number_input("Histogram bins", min_value=10, max_value=200, value=HIST_BINS_DEFAULT, key="agg_bins")
+    # (προαιρετικό) λίγο πιο μαζεμένο vertical spacing
+    st.markdown("""
+<style>
+/* tighten number input blocks */
+[data-testid="stNumberInput"] > div > div { padding-bottom: .25rem; }
+/* smaller label */
+[data-testid="stNumberInput"] label { font-size: 0.9rem; }
+</style>
+""", unsafe_allow_html=True)
+    c_topk, c_mincnt, c_bins = st.columns([1, 1, 1], gap="small")
+
+    with c_topk:
+        topk = st.number_input(
+        "Top-K (max groups to show)",
+        min_value=1, max_value=100, value=TOP_K_DEFAULT, step=1, key="agg_topk"
+    )
+        
+    with c_mincnt:
+       mincnt = st.number_input(
+        "Min count (rows)",
+        min_value=1, max_value=100_000, value=MIN_COUNT_DEFAULT, step=10, key="agg_mincnt"
+    )
+
+    with c_bins:
+        bins = st.number_input(
+        "Histogram bins",
+        min_value=10, max_value=200, value=HIST_BINS_DEFAULT, step=5, key="agg_bins"
+    )
 
     # Φιλτράρουμε με βάση το mincnt
     df_rank_f = df_rank[df_rank[ccol] >= int(mincnt)].copy()

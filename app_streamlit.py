@@ -877,7 +877,11 @@ elif looks_agg:
     df_rank["Pareto 80%"] = (df_rank["Cum Share Risk"] <= 0.80)
 
     st.markdown("### Ranked table (simple)")
-    st.caption("Sorted by Risk% then Count. Helps spot groups with the highest risk share.")
+    st.caption(
+    "Each row represents a category sorted by **Risk%**and **Count**. "
+    "The **Pareto 80%** column marks groups that together account for roughly 80% of the total risk — "
+    "helping you identify the most influential categories."
+)
     code_col = None; name_col = None
     if "cpv_grp3" in df_rank.columns and "CPV Group" in df_rank.columns:
         code_col, name_col = "cpv_grp3", "CPV Group"
@@ -993,7 +997,7 @@ else:
 
 # ================== FASTAPI INTEGRATION UI ==================
 st.divider()
-st.header("⚡ Live API predictions (FastAPI)")
+st.header("⚡ Try the API: get live predictions! ")
 api_base_in = st.text_input("API Base URL", value=DEFAULT_API_BASE)
 
 if st.session_state.get("_last_api_base") != api_base_in:
@@ -1049,7 +1053,7 @@ t1, t2, t3 = st.tabs(["🔮 Quick single", "📦 Batch from CSV", "🔧 Connecti
 
 # ================== Tab 1: Quick single ==================
 with t1:
-    st.caption("⚡ Try the API: get a fresh prediction (independent of the file you opened).")
+    st.caption("⚡ Get a fresh prediction, independent of the file you opened.")
     col1, col2 = st.columns(2)
     country_opts = sorted(COUNTRY_MAP.keys())
     with col1:
@@ -1165,7 +1169,10 @@ with t2:
             "warn",
         )
     else:
-        st.caption("Run batch predictions on the CSV you selected from the sidebar.")
+        st.caption(
+    "Generate **multiple predictions at once** using the CSV file you uploaded. "
+    "Each row in your file will receive a model prediction — ideal for testing many tenders together."
+)
         col_a, col_b = st.columns([1, 1])
         with col_a:
             tau_batch = st.number_input("Override τ (batch, days)", 100, 1200, 720, step=10)

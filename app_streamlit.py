@@ -556,16 +556,6 @@ is_early = ("predicted_days" in df_raw.columns) or ("risk_flag" in df_raw.column
 lower = {c.lower(): c for c in df_raw.columns}
 looks_agg = looks_agg or bool((lower.get("riskpct") or lower.get("risk%") or lower.get("risk_pct")) and lower.get("count"))
 
-# ---- Sidebar: Display ----
-with st.sidebar:
-    st.header("Display")
-    st.session_state.setdefault("topk",   TOP_K_DEFAULT)
-    st.session_state.setdefault("mincnt", MIN_COUNT_DEFAULT)
-    st.session_state.setdefault("bins",   HIST_BINS_DEFAULT)
-    topk   = st.number_input("Top-K", min_value=1, max_value=100, step=1, key="topk")
-    mincnt = st.number_input("Min count (rows)", min_value=1, max_value=100000, step=10, key="mincnt")
-    bins   = st.number_input("Histogram bins (predicted days)", min_value=10, max_value=200, step=5, key="bins")
-
 # ======== SAFE DEFAULTS + SECTIONS (χωρίς KeyError) ========
 # safe defaults (πάντα πριν χρησιμοποιήσεις session_state κλειδιά)
 for k, v in {
@@ -926,15 +916,28 @@ elif looks_agg:
     st.markdown("### Groups by Risk% & Count")
     st.caption("Shows top categories by their risk percentage and record count.")
 
-    # Chart-specific display settings
+    # Chart-specific display settings (μεταφέρουμε τα controls εδώ, ΟΧΙ στο sidebar)
     st.markdown("##### Chart display settings")
-    topk   = st.number_input("Top-K (max groups to show)", min_value=1, max_value=100, value=TOP_K_DEFAULT)
-    mincnt = st.number_input("Min count (rows)", min_value=1, max_value=100000, value=MIN_COUNT_DEFAULT)
-    bins   = st.number_input("Histogram bins", min_value=10, max_value=200, value=HIST_BINS_DEFAULT)
+    topk   = st.number_input("Top-K (max groups to show)", min_value=1, max_value=100, value=TOP_K_DEFAULT, key="agg_topk")
+    mincnt = st.number_input("Min count (rows)", min_value=1, max_value=100000, value=MIN_COUNT_DEFAULT, key="agg_mincnt")
+    bins   = st.number_input("Histogram bins", min_value=10, max_value=200, value=HIST_BINS_DEFAULT, key="agg_bins")
 
-    # Then compute effective top-K
-    k_eff = min(int(topk), len(df_rank))
-    top_tbl = df_rank.sort_values([rcol, ccol], ascending=[False, False]).head(k_eff).iloc[::-1]
+    # Φιλτράρουμε με βάση το mincnt
+    df_rank_f = df_rank[df_rank[ccol] >= int(mincnt)].copy()
+
+    # Υπολογίζουμε effective Top-K και πίνακα για γράφημα
+    k_eff   = min(int(topk), len(df_rank_f))
+    top_tbl = df_rank_f.sort_values([rcol, ccol], ascending=[False, False]).head(k_eff).iloc[::-1]
+
+    # --- Χτίζουμε labels για τον άξονα X ---
+    if cat_cols:  # π.χ. ["CPV Group"] ή ["CPV Division"] ανάλογα με το αρχείο
+        sub = top_tbl[cat_cols]
+        if isinstance(sub, pd.Series):
+            sub = sub.to_frame()
+        x = sub.astype(str).agg(" — ".join, axis=1)
+    else:
+    # Fallback όταν δεν υπάρχουν ρητές κατηγορικές στήλες
+        x = pd.Series([f"Group {i+1}" for i in range(len(top_tbl))], index=top_tbl.index)
 
     fig = go.Figure()
     fig.add_trace(go.Bar(x=x, y=top_tbl[rcol], name="Risk%", yaxis="y1",

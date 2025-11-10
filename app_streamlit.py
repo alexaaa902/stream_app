@@ -1337,8 +1337,7 @@ with t2:
 
                 st.markdown("### Predictions (joined with your batch file)")
                 st.caption(
-    "Below you can see your original CSV combined with the new predictions. "
-    "Use it to review results or download them for further analysis."
+    "Your original data is shown together with the new predictions — ready to review or download."
 )
                 df_show = df_out.copy()
                 if "predicted_days" in df_show.columns:

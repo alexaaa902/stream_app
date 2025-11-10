@@ -878,7 +878,7 @@ elif looks_agg:
 
     st.markdown("### Ranked table (simple)")
     st.caption(
-    "Each row represents a category sorted by **Risk%**and **Count**. "
+    "Each row represents a category sorted by **Risk%** and **Count**. "
     "The **Pareto 80%** column marks groups that together account for roughly 80% of the total risk — "
     "helping you identify the most influential categories."
 )
@@ -1336,7 +1336,10 @@ with t2:
                     st.info("No rankings available: predictions were not produced for this file (missing 'predicted_days').")
 
                 st.markdown("### Predictions (joined with your batch file)")
-                st.caption("Predictions are joined with your batch columns for quick QA or download.")
+                st.caption(
+    "Below you can see your original CSV combined with the new predictions. "
+    "Use it to review results or download them for further analysis."
+)
                 df_show = df_out.copy()
                 if "predicted_days" in df_show.columns:
                     df_show["Predicted days"] = pd.to_numeric(df_show["predicted_days"], errors="coerce").round().astype("Int64")

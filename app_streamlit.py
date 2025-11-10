@@ -1040,35 +1040,57 @@ with c_conn[2]:
 with c_conn[3]:
     st.link_button("📒 Open /redoc", f"{api_base_in.rstrip('/')}/redoc", use_container_width=True)
 
+# Decide when batch is allowed (only for raw CSVs)
+looks_early = is_model_output_like(df_raw)
+looks_agg   = is_aggregated_like(df_raw)
+can_batch   = not (looks_early or looks_agg)
+
 t1, t2, t3 = st.tabs(["🔮 Quick single", "📦 Batch from CSV", "🔧 Connection"])
 
 # ================== Tab 1: Quick single ==================
 with t1:
-    st.caption("Give a scenario for API prediction.")
+    st.caption("⚡ Try the API: get a fresh prediction (independent of the file you opened).")
     col1, col2 = st.columns(2)
     country_opts = sorted(COUNTRY_MAP.keys())
     with col1:
-        tender_country = st.selectbox("Country (tender_country)",
+        tender_country = st.selectbox(
+            "Country (tender_country)",
             [f"{c} — {COUNTRY_MAP[c]}" for c in country_opts],
-            index=country_opts.index("IT") if "IT" in country_opts else 0).split(" — ")[0]
+            index=country_opts.index("IT") if "IT" in country_opts else 0,
+        ).split(" — ")[0]
+
         PROC_REV = {v: k for k, v in PROC_MAP.items()}
         proc_labels = list(PROC_REV.keys())
         default_label = PROC_MAP.get("OPEN", proc_labels[0])
-        proc_label_sel = st.selectbox("Procedure types", proc_labels, index=proc_labels.index(default_label))
+        proc_label_sel = st.selectbox("Procedure type", proc_labels, index=proc_labels.index(default_label))
         tender_procedureType = PROC_REV[proc_label_sel]
-        tender_supplyType    = st.selectbox("Supply type", ["WORKS","SUPPLIES","SERVICES"])
+
+        tender_supplyType = st.selectbox("Supply type", ["WORKS", "SUPPLIES", "SERVICES"])
+
     with col2:
         tender_year  = st.number_input("Year", 2008, 2025, 2023)
         tender_estimatedPrice_EUR = st.number_input("Estimated price (EUR)", 0, 50_000_000, 3_000_000)
         lot_bidsCount = st.number_input("Bids count", 0, 1000, 4)
         tau_val       = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
-    st.divider(); st.markdown("#### Tender CPV category")
+    st.divider()
+    st.markdown("#### Tender CPV category")
+
     def cpv_label(code: str) -> str:
-        c = str(code).strip(); div = c[:2].zfill(2); name = CPV_MAPPING.get(div, "CPV"); return f"{c} — {name}"
-    cpv_codes = ["45200000","45100000","30200000","33100000","09100000","71300000","80500000","72000000","90400000","34900000","79900000","50500000"]
+        c = str(code).strip()
+        div = c[:2].zfill(2)
+        name = CPV_MAPPING.get(div, "CPV")
+        return f"{c} — {name}"
+
+    cpv_codes = [
+        "45200000","45100000","30200000","33100000","09100000",
+        "71300000","80500000","72000000","90400000","34900000","79900000","50500000"
+    ]
     cpv_mode = st.selectbox("Main CPV", ["Custom…"] + [cpv_label(c) for c in cpv_codes], index=1)
-    tender_mainCpv = (st.text_input("Enter CPV code (8 digits)", "45200000") if cpv_mode == "Custom…" else cpv_mode.split(" — ")[0])
+    tender_mainCpv = (
+        st.text_input("Enter CPV code (8 digits)", "45200000")
+        if cpv_mode == "Custom…" else cpv_mode.split(" — ")[0]
+    )
 
     def infer_supply_from_cpv(cpv: str) -> str:
         c = "".join(ch for ch in str(cpv) if ch.isdigit())[:8].ljust(2, "0")
@@ -1077,20 +1099,28 @@ with t1:
         if 3 <= div <= 44: return "SUPPLIES"
         if div >= 50: return "SERVICES"
         return "UNKNOWN"
+
     inferred_supply = infer_supply_from_cpv(tender_mainCpv)
     need_fix = inferred_supply != "UNKNOWN" and inferred_supply != tender_supplyType
     fix_on = st.toggle(f"Auto-fix supply type to {inferred_supply}", value=True) if need_fix else False
     if need_fix and not fix_on:
-        st.error("Supply type and CPV disagree. Enable Auto-fix or change one of them to continue."); st.stop()
-    if fix_on: tender_supplyType = inferred_supply
+        st.error("Supply type and CPV disagree. Enable Auto-fix or change one of them to continue.")
+        st.stop()
+    if fix_on:
+        tender_supplyType = inferred_supply
 
-    left, right = st.columns([1,3])
-    with left: run_single = st.button("🔮 Predict", use_container_width=True)
-    with right: st.caption("")
+    left, right = st.columns([1, 3])
+    with left:
+        run_single = st.button("🔮 Predict", use_container_width=True)
+    with right:
+        st.caption("")
+
     if run_single:
         inferred_supply2 = infer_supply_from_cpv(tender_mainCpv)
         if inferred_supply2 != "UNKNOWN" and inferred_supply2 != tender_supplyType and not st.session_state.get("fix_supply_cpv", False):
-            st.error("Supply type and CPV still disagree. Enable Auto-fix or change one of them to continue."); st.stop()
+            st.error("Supply type and CPV still disagree. Enable Auto-fix or change one of them to continue.")
+            st.stop()
+
         payload = {
             "tender_country": tender_country,
             "tender_procedureType": tender_procedureType,
@@ -1101,19 +1131,24 @@ with t1:
             "lot_bidsCount": float(lot_bidsCount),
             "tender_estimatedPrice_EUR_log": float(np.log1p(tender_estimatedPrice_EUR)),
             "lot_bidsCount_log": float(np.log1p(lot_bidsCount)),
-            "target_duration": 700
+            "target_duration": 700,
         }
         try:
             res = api_predict(payload, tau=float(tau_val))
             pred = float(res.get("predicted_days", float("nan")))
             flag = bool(res.get("risk_flag", pred >= float(tau_val)))
+
             st.markdown('<div class="sticky-toolbar">', unsafe_allow_html=True)
-            chip(f"Top-K: {int(st.session_state.get('topk', TOP_K_DEFAULT))}"); st.markdown("&nbsp;", unsafe_allow_html=True)
-            chip(f"Min count: {int(st.session_state.get('mincnt', MIN_COUNT_DEFAULT))}"); st.markdown('</div>', unsafe_allow_html=True)
-            k1, k2, k3 = st.columns([1,1,1])
+            chip(f"Top-K: {int(st.session_state.get('topk', TOP_K_DEFAULT))}")
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            chip(f"Min count: {int(st.session_state.get('mincnt', MIN_COUNT_DEFAULT))}")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            k1, k2, k3 = st.columns([1, 1, 1])
             with k1: kpi_card("Predicted days", f"{pred:,.0f}", f"τ = {float(tau_val):.0f} days")
             with k2: kpi_card("Risk flag", "HIGH" if flag else "LOW", "predicted vs τ")
-            with k3: kpi_card("Model", res.get("model_used","—"), f"API: {api_base_in}")
+            with k3: kpi_card("Model", res.get("model_used", "—"), f"API: {api_base_in}")
+
             with st.expander("Raw response"): st.json(res)
             with st.expander("Sanity check"): st.info(f"predicted_days={pred:.1f} vs τ={float(tau_val):.0f} → risk_flag={flag}")
         except requests.HTTPError as e:
@@ -1123,207 +1158,249 @@ with t1:
 
 # ================== Tab 2: Batch from CSV ==================
 with t2:
-    if is_model_output_like(df_raw) or is_aggregated_like(df_raw):
-        banner("""
-         This file already contains prediction outputs or aggregated summaries.
-        Use the **main analysis sections** instead of the Batch tab.
-        """, "warn")
-        st.stop()
+    if not can_batch:
+        banner(
+            "This tab works only with **raw input CSVs** (no model outputs and no aggregated summaries). "
+            "Open a procurement file with columns like <b>tender_country</b>, <b>tender_mainCpv</b>, <b>tender_year</b> to enable batch predictions.",
+            "warn",
+        )
+    else:
+        st.caption("Run batch predictions on the CSV you selected from the sidebar.")
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            tau_batch = st.number_input("Override τ (batch, days)", 100, 1200, 720, step=10)
+        with col_b:
+            top_k = st.number_input("Top-K (charts)", min_value=5, max_value=50, value=12, step=1)
 
-    st.caption("Τρέχει batch πάνω στο CSV που έχεις ήδη επιλέξει από το sidebar.")
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        tau_batch = st.number_input("Override τ (batch, days)", 100, 1200, 720, step=10)
-    with col_b:
-        top_k = st.number_input("Top-K (charts)", min_value=5, max_value=50, value=12, step=1)
-
-    def _prepare_rows(df_src: pd.DataFrame) -> list[dict]:
-        feat_path = "procuresight_api/model/features.json"
-        if os.path.exists(feat_path):
-            with open(feat_path, "r", encoding="utf-8") as f:
-                FEATS = json.load(f)
-            feat_cols = FEATS.get("features", list(df_src.columns))
-        else:
-            feat_cols = list(df_src.columns)
-        rows: list[dict] = []
-        for _, r in df_src.iterrows():
-            d = {c: r[c] for c in feat_cols if c in df_src.columns}
-            if "tender_estimatedPrice_EUR" in d and "tender_estimatedPrice_EUR_log" in feat_cols:
-                d.setdefault("tender_estimatedPrice_EUR_log", float(np.log1p(d.get("tender_estimatedPrice_EUR", 0) or 0)))
-            if "lot_bidsCount" in d and "lot_bidsCount_log" in feat_cols:
-                d.setdefault("lot_bidsCount_log", float(np.log1p(d.get("lot_bidsCount", 0) or 0)))
-            if "tender_country" in d and pd.notna(d["tender_country"]):
-                d["tender_country"] = str(d["tender_country"]).upper().strip()
-            if "tender_mainCpv" in d and pd.notna(d["tender_mainCpv"]):
-                cpv = str(d["tender_mainCpv"]).strip()
-                if cpv.endswith(".0"):
-                    cpv = cpv[:-2]
-                cpv = "".join(ch for ch in cpv if ch.isdigit())[:8]
-                d["tender_mainCpv"] = cpv
-            rows.append(d)
-        return rows
-
-    # ---- display + call API ----
-    with st.expander("Preview & send", expanded=True):
-        try:
-            df_in = df_raw.copy()
-            preview_rename = {
-                "tender_procedureType": "Procedure (raw)","procedure_label": "Procedure",
-                "tender_country": "Country code","country_name": "Country",
-                "buyer_country": "Buyer country","buyer_buyerType": "Buyer type",
-                "tender_year": "Year","tender_mainCpv": "Main CPV","tender_supplyType": "Supply type",
-                "tender_estimatedPrice_EUR": "Estimated price (EUR)","lot_bidsCount": "Bids count",
-                "tender_indicator_score_INTEGRITY": "Integrity score","tender_indicator_score_ADMINISTRATIVE": "Administrative score",
-                "tender_indicator_score_TRANSPARENCY": "Transparency score",
-            }
-            prev = df_in.head(10).rename(columns=preview_rename).copy()
-            for cand in ["Risk%", "RiskPct", "risk_pct", "risk%"]:
-                if cand in prev.columns:
-                    s = pd.to_numeric(prev[cand], errors="coerce")
-                    if pd.notna(s.max()) and s.max() <= 1.5: s = s * 100.0
-                    prev["Risk %"] = s.map(lambda v: f"{v:.2f}%")
-                    prev.drop(columns=[c for c in ["Risk%", "RiskPct", "risk_pct", "risk%"] if c in prev.columns], inplace=True, errors="ignore")
-                    break
-            st.caption(f"Rows to predict: {len(df_in):,}")
-            st.dataframe(prev, use_container_width=True)
-
-            rows = _prepare_rows(df_in)
-            rows = rows_json_safe_from_list(rows)  # <= καθαρισμός NaN/inf -> None
-            preds = api_predict_batch(rows, tau=float(tau_batch) if tau_batch else None)
-            df_out = pd.concat([df_in.reset_index(drop=True), pd.DataFrame(preds)], axis=1)
-
-            if "predicted_days" in df_out.columns:
-                st.divider(); st.subheader("Quick rankings on batch predictions")
-                df_rank_src = derive_labels(df_out.copy())
-                tau_used = float(tau_batch) if tau_batch else 720.0
-                df_rank_src["risk_flag"] = pd.to_numeric(df_rank_src["predicted_days"], errors="coerce") >= tau_used
-
-                def _all_unknown(df: pd.DataFrame, cols) -> bool:
-                    if cols is None: return True
-                    if isinstance(cols, (str, int)): cols = [cols]
-                    cols = [c for c in cols if c in df.columns]
-                    if not cols: return True
-                    sub = df[cols]
-                    if isinstance(sub, pd.Series): sub = sub.to_frame()
-                    norm = sub.astype(str).apply(lambda s: s.str.strip().str.upper())
-                    return norm.apply(
-                        lambda s: (s.nunique(dropna=False) == 1) and (s.iloc[0] in ("UNKNOWN","NAN","NONE","","NA")), axis=0
-                    ).all()
-
-                def _rank_and_plot(tbl: pd.DataFrame, by_candidates: list[str], title: str):
-                    by_cols = [c for c in by_candidates if c in tbl.columns]
-                    st.markdown(f"#### {title}")
-                    if not by_cols:
-                        st.info(f"Required columns missing for {title}."); return
-                    out = (
-                        tbl.groupby(by_cols, dropna=False)
-                           .agg(RiskPct=("risk_flag", lambda s: float(100.0 * np.nanmean(s.astype(float)))),
-                                Count=("risk_flag", "size"))
-                           .sort_values(["RiskPct", "Count"], ascending=[False, False])
-                           .reset_index()
-                    )
-                    if out.empty or _all_unknown(out, [c for c in out.columns if c not in ("RiskPct", "Count")]):
-                        st.info("No rankings available: the selected CSV lacks raw columns (country/procedure/CPV) or they are all Unknown."); return
-                    out_disp = out.copy()
-                    out_disp["RiskPct"] = out_disp["RiskPct"].astype(float).map(lambda v: f"{v:.2f}%")
-                    rename_map = {c: FRIENDLY_COLS.get(c, FRIENDLY_COLS.get(str(c).lower(), c)) for c in out_disp.columns if c not in ("RiskPct", "Count")}
-                    out_disp = out_disp.rename(columns=rename_map).rename(columns={"RiskPct": "Risk %"})
-                    st.dataframe(out_disp.head(50), use_container_width=True)
-
-                    idx_cols = [c for c in out.columns if c not in ("RiskPct", "Count")]
-                    if not idx_cols:
-                        x = pd.Series([f"Group {i+1}" for i in range(len(out))], index=out.index)
-                    else:
-                        sub = out[idx_cols]
-                        if isinstance(sub, pd.Series): sub = sub.to_frame()
-                        x = sub.astype(str).agg(" — ".join, axis=1)
-
-                    fig = go.Figure()
-                    fig.add_trace(go.Bar(x=x, y=out["RiskPct"], name="Risk%", yaxis="y1",
-                                         hovertemplate="<b>%{x}</b><br>Risk%: %{y:.2f}%<extra></extra>"))
-                    fig.add_trace(go.Bar(x=x, y=(out["Count"]/1000.0), name="Count (K)", yaxis="y2", opacity=0.60,
-                                         hovertemplate="<b>%{x}</b><br>Count: %{y:,.1f}K<extra></extra>"))
-                    fig.update_layout(xaxis_title="Group", yaxis=dict(title="Risk %", range=[0,100]),
-                                      yaxis2=dict(title="Count (K)", overlaying="y", side="right"),
-                                      barmode="group", margin=dict(t=50),
-                                      legend=dict(orientation="h", y=1.02, x=1, xanchor="right"))
-                    st.plotly_chart(fig, use_container_width=True, key=f"batch_rank_{_slug(title)}")
-
-                _rank_and_plot(df_rank_src, ["country_name", "tender_country"], "By Country")
-                _rank_and_plot(df_rank_src, ["procedure_label", "tender_procedureType"], "By Procedure")
-
-                df_rank_src2 = df_rank_src.copy()
-                base_series = pd.Series([np.nan] * len(df_rank_src2), index=df_rank_src2.index)
-                df_rank_src2["cpv_div2"] = pd.to_numeric(df_rank_src2.get("cpv_div2", base_series), errors="coerce")
-                if df_rank_src2["cpv_div2"].isna().all():
-                    if "tender_mainCpv" in df_rank_src2.columns:
-                        s_cpv = df_rank_src2["tender_mainCpv"].astype(str)
-                    else:
-                        s_cpv = pd.Series([""] * len(df_rank_src2), index=df_rank_src2.index)
-                    df_rank_src2["cpv_div2"] = pd.to_numeric(s_cpv.str.slice(0, 2), errors="coerce")
-                _rank_and_plot(df_rank_src2, ["cpv_div2"], "By CPV (division-2)")
+        def _prepare_rows(df_src: pd.DataFrame) -> list[dict]:
+            feat_path = "procuresight_api/model/features.json"
+            if os.path.exists(feat_path):
+                with open(feat_path, "r", encoding="utf-8") as f:
+                    FEATS = json.load(f)
+                feat_cols = FEATS.get("features", list(df_src.columns))
             else:
-                st.info("No rankings available: predictions were not produced for this file (missing 'predicted_days').")
+                feat_cols = list(df_src.columns)
 
-            st.markdown("### Predictions (joined with your batch file)")
-            st.caption("Predictions are joined with your batch columns for quick QA or download.")
-            df_show = df_out.copy()
-            if "predicted_days" in df_show.columns:
-                df_show["Predicted days"] = pd.to_numeric(df_show["predicted_days"], errors="coerce").round().astype("Int64")
-            if "risk_flag" in df_show.columns:
-                df_show["High-risk?"] = df_show["risk_flag"].map({True: "Yes", False: "No"})
-            if "RiskPct" in df_show.columns:
-                rp = pd.to_numeric(df_show["RiskPct"], errors="coerce")
-                if pd.notna(rp.max()) and rp.max() <= 1.5:
-                    rp = rp * 100.0
-                df_show["Risk %"] = rp.map(lambda v: f"{v:.2f}%")
-            show_rename = {
-                "tender_procedureType": "Procedure (raw)","tender_supplyType": "Supply type",
-                "buyer_buyerType": "Buyer type","buyer_country": "Buyer country",
-                "tender_estimatedPrice_EUR": "Estimated price (EUR)","lot_bidsCount": "Bids count",
-                "tender_indicator_score_INTEGRITY": "Integrity score",
-                "tender_indicator_score_ADMINISTRATIVE": "Administrative score",
-                "tender_indicator_score_TRANSPARENCY": "Transparency score",
-            }
-            df_show.rename(columns=show_rename, inplace=True)
-            df_show = friendly_rename_df(df_show)
-            for c in ["RiskPct", "Risk%", "predicted_days", "risk_flag"]:
-                if c in df_show.columns:
-                    df_show.drop(columns=[c], inplace=True, errors="ignore")
-            df_show = df_show.loc[:, ~pd.Index(df_show.columns).duplicated()].copy().reset_index(drop=True)
-            front = [c for c in ["Procedure", "Procedure (raw)", "Country", "Country code", "CPV Group", "CPV Division",
-                                 "Risk %", "Predicted days", "High-risk?", "model_used", "tau"] if c in df_show.columns]
-            df_show = df_show[front + [c for c in df_show.columns if c not in front]]
-            def _hl(val):
-                if val == "Yes": return "background-color:#ffb3b3; font-weight:700; text-align:center;"
-                if val == "No":  return "background-color:#b3ffcc; font-weight:700; text-align:center;"
-                return ""
+            rows: list[dict] = []
+            for _, r in df_src.iterrows():
+                d = {c: r[c] for c in feat_cols if c in df_src.columns}
+                if "tender_estimatedPrice_EUR" in d and "tender_estimatedPrice_EUR_log" in feat_cols:
+                    d.setdefault("tender_estimatedPrice_EUR_log", float(np.log1p(d.get("tender_estimatedPrice_EUR", 0) or 0)))
+                if "lot_bidsCount" in d and "lot_bidsCount_log" in feat_cols:
+                    d.setdefault("lot_bidsCount_log", float(np.log1p(d.get("lot_bidsCount", 0) or 0)))
+                if "tender_country" in d and pd.notna(d["tender_country"]):
+                    d["tender_country"] = str(d["tender_country"]).upper().strip()
+                if "tender_mainCpv" in d and pd.notna(d["tender_mainCpv"]):
+                    cpv = str(d["tender_mainCpv"]).strip()
+                    if cpv.endswith(".0"):
+                        cpv = cpv[:-2]
+                    cpv = "".join(ch for ch in cpv if ch.isdigit())[:8]
+                    d["tender_mainCpv"] = cpv
+                rows.append(d)
+            return rows
+
+        # ---- display + call API ----
+        with st.expander("Preview & send", expanded=True):
             try:
-                styler = df_show.style
-                if "High-risk?" in df_show.columns:
-                    styler = styler.applymap(_hl, subset=["High-risk?"])
-                if "Predicted days" in df_show.columns:
-                    styler = styler.set_properties(subset=["Predicted days"], **{"background-color":"#fff8b3","font-weight":"bold"})
-                st.dataframe(styler, use_container_width=True)
-            except Exception:
-                st.dataframe(df_show, use_container_width=True)
+                df_in = df_raw.copy()
 
-            cdl, cdr = st.columns(2)
-            with cdl:
-                st.download_button("⬇️ Download predictions CSV",
-                                   df_show.to_csv(index=False).encode("utf-8"),
-                                   file_name="predictions_batch_friendly.csv",
-                                   mime="text/csv", use_container_width=True)
-            with cdr:
-                st.download_button("⬇️ Download raw predictions CSV",
-                                   df_out.to_csv(index=False).encode("utf-8"),
-                                   file_name="predictions_batch_raw.csv",
-                                   mime="text/csv", use_container_width=True)
+                preview_rename = {
+                    "tender_procedureType": "Procedure (raw)",
+                    "procedure_label": "Procedure",
+                    "tender_country": "Country code",
+                    "country_name": "Country",
+                    "buyer_country": "Buyer country",
+                    "buyer_buyerType": "Buyer type",
+                    "tender_year": "Year",
+                    "tender_mainCpv": "Main CPV",
+                    "tender_supplyType": "Supply type",
+                    "tender_estimatedPrice_EUR": "Estimated price (EUR)",
+                    "lot_bidsCount": "Bids count",
+                    "tender_indicator_score_INTEGRITY": "Integrity score",
+                    "tender_indicator_score_ADMINISTRATIVE": "Administrative score",
+                    "tender_indicator_score_TRANSPARENCY": "Transparency score",
+                }
+                prev = df_in.head(10).rename(columns=preview_rename).copy()
 
-        except requests.HTTPError as e:
-            st.error(f"API error: {e.response.status_code} — {e.response.text}")
-        except Exception as e:
-            st.error(f"Failed to run batch: {e}")
+                for cand in ["Risk%", "RiskPct", "risk_pct", "risk%"]:
+                    if cand in prev.columns:
+                        s = pd.to_numeric(prev[cand], errors="coerce")
+                        if pd.notna(s.max()) and s.max() <= 1.5:
+                            s = s * 100.0
+                        prev["Risk %"] = s.map(lambda v: f"{v:.2f}%")
+                        prev.drop(columns=[c for c in ["Risk%", "RiskPct", "risk_pct", "risk%"] if c in prev.columns], inplace=True, errors="ignore")
+                        break
+
+                st.caption(f"Rows to predict: {len(df_in):,}")
+                st.dataframe(prev, use_container_width=True)
+
+                rows = _prepare_rows(df_in)
+                rows = rows_json_safe_from_list(rows)  # NaN/±inf -> None
+                preds = api_predict_batch(rows, tau=float(tau_batch) if tau_batch else None)
+                df_out = pd.concat([df_in.reset_index(drop=True), pd.DataFrame(preds)], axis=1)
+
+                if "predicted_days" in df_out.columns:
+                    st.divider()
+                    st.subheader("Quick rankings on batch predictions")
+                    df_rank_src = derive_labels(df_out.copy())
+                    tau_used = float(tau_batch) if tau_batch else 720.0
+                    df_rank_src["risk_flag"] = pd.to_numeric(df_rank_src["predicted_days"], errors="coerce") >= tau_used
+
+                    def _all_unknown(df: pd.DataFrame, cols) -> bool:
+                        if cols is None:
+                            return True
+                        if isinstance(cols, (str, int)):
+                            cols = [cols]
+                        cols = [c for c in cols if c in df.columns]
+                        if not cols:
+                            return True
+                        sub = df[cols]
+                        if isinstance(sub, pd.Series):
+                            sub = sub.to_frame()
+                        norm = sub.astype(str).apply(lambda s: s.str.strip().str.upper())
+                        return norm.apply(
+                            lambda s: (s.nunique(dropna=False) == 1) and (s.iloc[0] in ("UNKNOWN", "NAN", "NONE", "", "NA")),
+                            axis=0,
+                        ).all()
+
+                    def _rank_and_plot(tbl: pd.DataFrame, by_candidates: list[str], title: str):
+                        by_cols = [c for c in by_candidates if c in tbl.columns]
+                        st.markdown(f"#### {title}")
+                        if not by_cols:
+                            st.info(f"Required columns missing for {title}.")
+                            return
+                        out = (
+                            tbl.groupby(by_cols, dropna=False)
+                               .agg(
+                                   RiskPct=("risk_flag", lambda s: float(100.0 * np.nanmean(s.astype(float)))),
+                                   Count=("risk_flag", "size"),
+                               )
+                               .sort_values(["RiskPct", "Count"], ascending=[False, False])
+                               .reset_index()
+                        )
+                        if out.empty or _all_unknown(out, [c for c in out.columns if c not in ("RiskPct", "Count")]):
+                            st.info("No rankings available: the selected CSV lacks raw columns (country/procedure/CPV) or they are all Unknown.")
+                            return
+
+                        out_disp = out.copy()
+                        out_disp["RiskPct"] = out_disp["RiskPct"].astype(float).map(lambda v: f"{v:.2f}%")
+                        rename_map = {c: FRIENDLY_COLS.get(c, FRIENDLY_COLS.get(str(c).lower(), c)) for c in out_disp.columns if c not in ("RiskPct", "Count")}
+                        out_disp = out_disp.rename(columns=rename_map).rename(columns={"RiskPct": "Risk %"})
+                        st.dataframe(out_disp.head(50), use_container_width=True)
+
+                        idx_cols = [c for c in out.columns if c not in ("RiskPct", "Count")]
+                        if not idx_cols:
+                            x = pd.Series([f"Group {i+1}" for i in range(len(out))], index=out.index)
+                        else:
+                            sub = out[idx_cols]
+                            if isinstance(sub, pd.Series):
+                                sub = sub.to_frame()
+                            x = sub.astype(str).agg(" — ".join, axis=1)
+
+                        fig = go.Figure()
+                        fig.add_trace(go.Bar(
+                            x=x, y=out["RiskPct"], name="Risk%", yaxis="y1",
+                            hovertemplate="<b>%{x}</b><br>Risk%: %{y:.2f}%<extra></extra>",
+                        ))
+                        fig.add_trace(go.Bar(
+                            x=x, y=(out["Count"] / 1000.0), name="Count (K)", yaxis="y2", opacity=0.60,
+                            hovertemplate="<b>%{x}</b><br>Count: %{y:,.1f}K<extra></extra>",
+                        ))
+                        fig.update_layout(
+                            xaxis_title="Group",
+                            yaxis=dict(title="Risk %", range=[0, 100]),
+                            yaxis2=dict(title="Count (K)", overlaying="y", side="right"),
+                            barmode="group", margin=dict(t=50),
+                            legend=dict(orientation="h", y=1.02, x=1, xanchor="right"),
+                        )
+                        st.plotly_chart(fig, use_container_width=True, key=f"batch_rank_{_slug(title)}")
+
+                    _rank_and_plot(df_rank_src, ["country_name", "tender_country"], "By Country")
+                    _rank_and_plot(df_rank_src, ["procedure_label", "tender_procedureType"], "By Procedure")
+
+                    df_rank_src2 = df_rank_src.copy()
+                    base_series = pd.Series([np.nan] * len(df_rank_src2), index=df_rank_src2.index)
+                    df_rank_src2["cpv_div2"] = pd.to_numeric(df_rank_src2.get("cpv_div2", base_series), errors="coerce")
+                    if df_rank_src2["cpv_div2"].isna().all():
+                        s_cpv = df_rank_src2["tender_mainCpv"].astype(str) if "tender_mainCpv" in df_rank_src2.columns else pd.Series([""] * len(df_rank_src2), index=df_rank_src2.index)
+                        df_rank_src2["cpv_div2"] = pd.to_numeric(s_cpv.str.slice(0, 2), errors="coerce")
+                    _rank_and_plot(df_rank_src2, ["cpv_div2"], "By CPV (division-2)")
+                else:
+                    st.info("No rankings available: predictions were not produced for this file (missing 'predicted_days').")
+
+                st.markdown("### Predictions (joined with your batch file)")
+                st.caption("Predictions are joined with your batch columns for quick QA or download.")
+                df_show = df_out.copy()
+                if "predicted_days" in df_show.columns:
+                    df_show["Predicted days"] = pd.to_numeric(df_show["predicted_days"], errors="coerce").round().astype("Int64")
+                if "risk_flag" in df_show.columns:
+                    df_show["High-risk?"] = df_show["risk_flag"].map({True: "Yes", False: "No"})
+                if "RiskPct" in df_show.columns:
+                    rp = pd.to_numeric(df_show["RiskPct"], errors="coerce")
+                    if pd.notna(rp.max()) and rp.max() <= 1.5:
+                        rp = rp * 100.0
+                    df_show["Risk %"] = rp.map(lambda v: f"{v:.2f}%")
+
+                show_rename = {
+                    "tender_procedureType": "Procedure (raw)",
+                    "tender_supplyType": "Supply type",
+                    "buyer_buyerType": "Buyer type",
+                    "buyer_country": "Buyer country",
+                    "tender_estimatedPrice_EUR": "Estimated price (EUR)",
+                    "lot_bidsCount": "Bids count",
+                    "tender_indicator_score_INTEGRITY": "Integrity score",
+                    "tender_indicator_score_ADMINISTRATIVE": "Administrative score",
+                    "tender_indicator_score_TRANSPARENCY": "Transparency score",
+                }
+                df_show.rename(columns=show_rename, inplace=True)
+                df_show = friendly_rename_df(df_show)
+                for c in ["RiskPct", "Risk%", "predicted_days", "risk_flag"]:
+                    if c in df_show.columns:
+                        df_show.drop(columns=[c], inplace=True, errors="ignore")
+                df_show = df_show.loc[:, ~pd.Index(df_show.columns).duplicated()].copy().reset_index(drop=True)
+
+                front = [c for c in [
+                    "Procedure", "Procedure (raw)", "Country", "Country code", "CPV Group", "CPV Division",
+                    "Risk %", "Predicted days", "High-risk?", "model_used", "tau"
+                ] if c in df_show.columns]
+                df_show = df_show[front + [c for c in df_show.columns if c not in front]]
+
+                def _hl(val):
+                    if val == "Yes": return "background-color:#ffb3b3; font-weight:700; text-align:center;"
+                    if val == "No":  return "background-color:#b3ffcc; font-weight:700; text-align:center;"
+                    return ""
+
+                try:
+                    styler = df_show.style
+                    if "High-risk?" in df_show.columns:
+                        styler = styler.applymap(_hl, subset=["High-risk?"])
+                    if "Predicted days" in df_show.columns:
+                        styler = styler.set_properties(subset=["Predicted days"], **{"background-color":"#fff8b3","font-weight":"bold"})
+                    st.dataframe(styler, use_container_width=True)
+                except Exception:
+                    st.dataframe(df_show, use_container_width=True)
+
+                cdl, cdr = st.columns(2)
+                with cdl:
+                    st.download_button(
+                        "⬇️ Download predictions CSV",
+                        df_show.to_csv(index=False).encode("utf-8"),
+                        file_name="predictions_batch_friendly.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+                with cdr:
+                    st.download_button(
+                        "⬇️ Download raw predictions CSV",
+                        df_out.to_csv(index=False).encode("utf-8"),
+                        file_name="predictions_batch_raw.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+            except requests.HTTPError as e:
+                st.error(f"API error: {e.status_code if hasattr(e, 'status_code') else ''} — {e.response.text if hasattr(e, 'response') else e}")
+            except Exception as e:
+                st.error(f"Failed to run batch: {e}")
 
 # ================== Tab 3: Connection / Debug ==================
 with t3:
@@ -1354,5 +1431,5 @@ st.markdown(
       <div>Contact: <a href="mailto:alarsenoudh@gmail.com">alarsenoudh@gmail.com</a></div>
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )

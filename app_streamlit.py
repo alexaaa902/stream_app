@@ -922,31 +922,33 @@ elif looks_agg:
     st.plotly_chart(fig_sc, use_container_width=True)
     st.caption("Each point represents a group; hover to see details.")
 
-    k_eff = min(int(topk), len(df_rank))
-    st.markdown(_top_title("### Groups by Risk% & Count", len(df_rank), k_eff))
-    top_tbl = df_rank.sort_values([rcol, ccol], ascending=[False, False]).head(k_eff).iloc[::-1]
+    # --- Groups by Risk% & Count section ---
+    st.markdown("### Groups by Risk% & Count")
+    st.caption("Shows top categories by their risk percentage and record count.")
 
-    if cat_cols is None:
-        cat_cols = []
-    if isinstance(cat_cols, (str, int)):
-        cat_cols = [cat_cols]
-    if cat_cols:
-        sub = top_tbl[cat_cols]
-        if isinstance(sub, pd.Series):
-            sub = sub.to_frame()
-        x = sub.astype(str).agg(" — ".join, axis=1)
-    else:
-        x = pd.Series([f"Group {i+1}" for i in range(len(top_tbl))], index=top_tbl.index)
+    # Chart-specific display settings
+    st.markdown("##### Chart display settings")
+    topk   = st.number_input("Top-K (max groups to show)", min_value=1, max_value=100, value=TOP_K_DEFAULT)
+    mincnt = st.number_input("Min count (rows)", min_value=1, max_value=100000, value=MIN_COUNT_DEFAULT)
+    bins   = st.number_input("Histogram bins", min_value=10, max_value=200, value=HIST_BINS_DEFAULT)
+
+    # Then compute effective top-K
+    k_eff = min(int(topk), len(df_rank))
+    top_tbl = df_rank.sort_values([rcol, ccol], ascending=[False, False]).head(k_eff).iloc[::-1]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(x=x, y=top_tbl[rcol], name="Risk%", yaxis="y1",
-                         hovertemplate="<b>%{x}</b><br>Risk%: %{y:.2f}%<extra></extra>"))
+                     hovertemplate="<b>%{x}</b><br>Risk%: %{y:.2f}%<extra></extra>"))
     fig.add_trace(go.Bar(x=x, y=(top_tbl[ccol]/1000.0), name="Count (K)", yaxis="y2", opacity=0.60,
-                         hovertemplate="<b>%{x}</b><br>Count: %{y:,.1f}K<extra></extra>"))
-    fig.update_layout(xaxis=dict(title="Group"), yaxis=dict(title="Risk %", range=[0,100]),
-                      yaxis2=dict(title="Count (K)", overlaying="y", side="right"),
-                      barmode="group", legend=dict(orientation="h", y=1.02, x=1, xanchor="right", yanchor="bottom"),
-                      margin=dict(t=60))
+                     hovertemplate="<b>%{x}</b><br>Count: %{y:,.1f}K<extra></extra>"))
+    fig.update_layout(
+    xaxis=dict(title="Group"),
+    yaxis=dict(title="Risk %", range=[0,100]),
+    yaxis2=dict(title="Count (K)", overlaying="y", side="right"),
+    barmode="group",
+    legend=dict(orientation="h", y=1.02, x=1, xanchor="right"),
+    margin=dict(t=60)
+)
     st.plotly_chart(fig, use_container_width=True, key="chart_groups_risk_count")
 
     st.markdown("### Cumulative risk vs cumulative count (Pareto view)")

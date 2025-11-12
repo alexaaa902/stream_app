@@ -718,70 +718,104 @@ if is_early:
         st.download_button("⬇️ Download filtered CSV", data=csv_bytes, file_name="filtered_early_warning.csv",
                            mime="text/csv", use_container_width=True)
 
-    if show_rankings:
-        st.divider(); st.subheader("Rankings & charts")
-        st.caption("Risk% = percentage of high-risk rows per category. Count = number of rows per category (minimum count applies).")
+# ---------------- Rankings & charts ----------------
+if show_rankings:
+    st.divider(); st.subheader("Rankings & charts")
+    st.caption("Risk% = percentage of high-risk rows per category. Count = number of rows per category (minimum count applies).")
 
-        def render_section(section_title, by_cols, explain=None, rename_cols=None):
-            st.markdown(f"### {section_title}")
-            if explain: st.caption(explain)
-            tbl = rank_table(df_f, by_cols, int(mincnt))
-            if tbl.empty:
-                st.info("No categories meet the minimum count threshold."); return
-            df_disp = tbl.reset_index()
-            if rename_cols: df_disp = df_disp.rename(columns=rename_cols)
-            df_disp["RiskPct"] = df_disp["RiskPct"].map(lambda v: f"{v:.2f}%")
-            st.dataframe(friendly_rename_df(df_disp).head(100), use_container_width=True)
-            k_eff = min(int(topk), len(tbl))
-            top_tbl = tbl.head(k_eff).copy().iloc[::-1]
-            plot_risk_vs_count(top_tbl, title=f"{section_title}: " + _top_title("Risk% & Count", len(tbl), k_eff))
-
-        render_section(
-            "CPV sectors & groups (Division 2-digit, Group 3-digit)",
-            ["cpv_category","cpv_div2","cpv_grp3"],
-            "- Division (2-digit) maps to sector (e.g., 33 → Medical equipment).\n"
-            "- Group (3-digit) within that division (e.g., 331 → Medical imaging).",
-            {"cpv_category":"CPV Category Name","cpv_div2":"CPV Division (code)","cpv_grp3":"CPV Group (code)"}
+    # 🔧 Local controls (μόνο για early-warning)
+    st.markdown("#### Ranking display settings")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        ew_topk = st.number_input(
+            "Top-K (max groups to show)", 1, 100, TOP_K_DEFAULT, step=1, key="ew_topk"
         )
-        render_section("Countries", ["country_name"], "Country of the tender (mapped from ISO code).",
-                       {"country_name":"Country"})
-        render_section("Procedure types", ["procedure_label"], "Standard TED procedure types.",
-                       {"procedure_label":"Procedure"})
-
-    # --- Histogram + ECDF ---
-    if show_hist and "predicted_days" in df_f.columns:
-        st.markdown("### Distribution of predicted duration (days)")
-        st.caption("Binned distribution of predicted days (clipped to [0, 1800]).")
-        bins = st.number_input(
-             "Histogram bins",
-             min_value=10, max_value=200, value=HIST_BINS_DEFAULT, step=5, key="ew_bins"
+    with col_b:
+        ew_mincnt = st.number_input(
+            "Min count (rows)", 1, 100_000, MIN_COUNT_DEFAULT, step=10, key="ew_mincnt"
         )
-        cuts = pd.cut(df_f["predicted_days"].clip(0, 1800), bins=int(bins))
-        hist = cuts.value_counts().sort_index()
-        labels = [f"[{int(iv.left)}–{int(iv.right)}]" for iv in hist.index.to_list()]
-        hist_df = pd.DataFrame({"bin": labels, "count": hist.values}).set_index("bin")
-        st.bar_chart(hist_df["count"], use_container_width=True)
 
-        st.markdown("#### Cumulative distribution (ECDF)")
-        st.caption(
-            "The **ECDF** shows the fraction of tenders with predicted duration ≤ X days. "
-            "It rises from 0 to 1; a steeper rise means predictions are concentrated."
+    # ✅ render_section με ορίσματα
+    def render_section(section_title, by_cols, explain=None, rename_cols=None,
+                       topk_val=None, mincnt_val=None):
+        st.markdown(f"### {section_title}")
+        if explain: st.caption(explain)
+
+        mc = int(mincnt_val if mincnt_val is not None else MIN_COUNT_DEFAULT)
+        tbl = rank_table(df_f, by_cols, mc)
+        if tbl.empty:
+            st.info("No categories meet the minimum count threshold.")
+            return
+
+        df_disp = tbl.reset_index()
+        if rename_cols: df_disp = df_disp.rename(columns=rename_cols)
+        df_disp["RiskPct"] = df_disp["RiskPct"].map(lambda v: f"{v:.2f}%")
+        st.dataframe(friendly_rename_df(df_disp).head(100), use_container_width=True)
+
+        k_eff = min(int(topk_val if topk_val is not None else TOP_K_DEFAULT), len(tbl))
+        top_tbl = tbl.head(k_eff).copy().iloc[::-1]
+        plot_risk_vs_count(
+            top_tbl,
+            title=f"{section_title}: " + _top_title("Risk% & Count", len(tbl), k_eff)
         )
-        vals = np.sort(df_f["predicted_days"].dropna().values)
-        if len(vals) > 0:
-            y = np.arange(1, len(vals)+1) / len(vals)
-            fig_ecdf = go.Figure(go.Scatter(
-                x=vals, y=y, mode="lines",
-                hovertemplate="Predicted: %{x:.2f} days<br>ECDF: %{y:.2f}<extra></extra>"
-            ))
-            fig_ecdf.update_layout(
-                xaxis=dict(title="Predicted days"),
-                yaxis=dict(title="ECDF", range=[0, 1]),
-                margin=dict(t=20)
-            )
-            st.plotly_chart(fig_ecdf, use_container_width=True)
-            p10, p50, p90 = np.percentile(vals, [10, 50, 90])
-            st.caption(f"p10={p10:.0f}, p50={p50:.0f}, p90={p90:.0f}; mean={np.mean(vals):.1f}")
+
+    # 👇 Κλήσεις με τα νέα ορίσματα
+    render_section(
+        "CPV sectors & groups (Division 2-digit, Group 3-digit)",
+        ["cpv_category","cpv_div2","cpv_grp3"],
+        "- Division (2-digit) maps to sector (e.g., 33 → Medical equipment).\n"
+        "- Group (3-digit) within that division (e.g., 331 → Medical imaging).",
+        {"cpv_category":"CPV Category Name","cpv_div2":"CPV Division (code)","cpv_grp3":"CPV Group (code)"},
+        topk_val=ew_topk, mincnt_val=ew_mincnt
+    )
+    render_section(
+        "Countries", ["country_name"], "Country of the tender (mapped from ISO code).",
+        {"country_name":"Country"},
+        topk_val=ew_topk, mincnt_val=ew_mincnt
+    )
+    render_section(
+        "Procedure types", ["procedure_label"], "Standard TED procedure types.",
+        {"procedure_label":"Procedure"},
+        topk_val=ew_topk, mincnt_val=ew_mincnt
+    )
+
+# ---------------- Histogram + ECDF (early-warning only) ----------------
+if show_hist and "predicted_days" in df_f.columns:
+    st.markdown("### Distribution of predicted duration (days)")
+    st.caption("Binned distribution of predicted days (clipped to [0, 1800]).")
+
+    # ⚠️ Δικό του key για τα bins στο early-warning
+    bins = st.number_input(
+        "Histogram bins",
+        min_value=10, max_value=200, value=HIST_BINS_DEFAULT, step=5, key="ew_bins"
+    )
+
+    cuts = pd.cut(df_f["predicted_days"].clip(0, 1800), bins=int(bins))
+    hist = cuts.value_counts().sort_index()
+    labels = [f"[{int(iv.left)}–{int(iv.right)}]" for iv in hist.index.to_list()]
+    hist_df = pd.DataFrame({"bin": labels, "count": hist.values}).set_index("bin")
+    st.bar_chart(hist_df["count"], use_container_width=True)
+
+    st.markdown("#### Cumulative distribution (ECDF)")
+    st.caption(
+        "The **ECDF** shows the fraction of tenders with predicted duration ≤ X days. "
+        "It rises from 0 to 1; a steeper rise means predictions are concentrated."
+    )
+    vals = np.sort(df_f["predicted_days"].dropna().values)
+    if len(vals) > 0:
+        y = np.arange(1, len(vals)+1) / len(vals)
+        fig_ecdf = go.Figure(go.Scatter(
+            x=vals, y=y, mode="lines",
+            hovertemplate="Predicted: %{x:.2f} days<br>ECDF: %{y:.2f}<extra></extra>"
+        ))
+        fig_ecdf.update_layout(
+            xaxis=dict(title="Predicted days"),
+            yaxis=dict(title="ECDF", range=[0, 1]),
+            margin=dict(t=20)
+        )
+        st.plotly_chart(fig_ecdf, use_container_width=True)
+        p10, p50, p90 = np.percentile(vals, [10, 50, 90])
+        st.caption(f"p10={p10:.0f}, p50={p50:.0f}, p90={p90:.0f}; mean={np.mean(vals):.1f}")
 
     # --- helper έξω από το if ---
     def plot_predicted_by_category(df_in: pd.DataFrame, cat_col: str, top_k: int = 12):
@@ -938,7 +972,7 @@ elif looks_agg:
         "Top-K (max groups to show)",
         min_value=1, max_value=100, value=TOP_K_DEFAULT, step=1, key="agg_topk"
     )
-        
+
     with c_mincnt:
        mincnt = st.number_input(
         "Min count (rows)",

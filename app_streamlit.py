@@ -701,16 +701,27 @@ if is_early:
         st.download_button("⬇️ Download filtered CSV", data=csv_bytes, file_name="filtered_early_warning.csv",
                            mime="text/csv", use_container_width=True)
 
-    # ---------------- Rankings & charts (EARLY ONLY) ----------------
+        # ---------------- Rankings & charts (EARLY ONLY) ----------------
     if show_rankings:
-        st.divider(); st.subheader("Rankings & charts")
-        st.caption("Risk% = percentage of high-risk rows per category. Count = number of rows per category (minimum count applies).")
+        st.divider()
+        st.subheader("Rankings & charts")
+        st.caption(
+            "Risk% = percentage of high-risk rows per category. "
+            "Count = number of rows per category (minimum count applies)."
+        )
 
-        # ✅ το render_section ορίζεται ΜΕΣΑ στο early-flow ώστε να έχει scope στο df_f
-        def render_section(section_title, by_cols, explain=None, rename_cols=None,
-                           topk_val=None, mincnt_val=None):
+        # ✅ helper: παίρνει topk/mincnt σαν ορίσματα, ΔΕΝ χρησιμοποιεί ew_topk/ew_mincnt
+        def render_section(
+            section_title,
+            by_cols,
+            explain=None,
+            rename_cols=None,
+            topk_val=None,
+            mincnt_val=None,
+        ):
             st.markdown(f"### {section_title}")
-            if explain: st.caption(explain)
+            if explain:
+                st.caption(explain)
 
             mc = int(mincnt_val if mincnt_val is not None else MIN_COUNT_DEFAULT)
             tbl = rank_table(df_f, by_cols, mc)
@@ -719,7 +730,8 @@ if is_early:
                 return
 
             df_disp = tbl.reset_index()
-            if rename_cols: df_disp = df_disp.rename(columns=rename_cols)
+            if rename_cols:
+                df_disp = df_disp.rename(columns=rename_cols)
             df_disp["RiskPct"] = df_disp["RiskPct"].map(lambda v: f"{v:.2f}%")
             st.dataframe(friendly_rename_df(df_disp).head(100), use_container_width=True)
 
@@ -727,58 +739,103 @@ if is_early:
             top_tbl = tbl.head(k_eff).copy().iloc[::-1]
             plot_risk_vs_count(
                 top_tbl,
-                title=f"{section_title}: " + _top_title("Risk% & Count", len(tbl), k_eff)
+                title=f"{section_title}: " + _top_title("Risk% & Count", len(tbl), k_eff),
             )
 
+        # ---- CPV display settings ----
         st.markdown("#### CPV display settings")
         colA1, colA2 = st.columns(2)
         with colA1:
             ew_topk_cpv = st.number_input(
-                "Top-K (CPV)", 1, 100, TOP_K_DEFAULT, step=1, key="ew_topk_cpv"
+                "Top-K (CPV)",
+                1,
+                100,
+                TOP_K_DEFAULT,
+                step=1,
+                key="ew_topk_cpv",
             )
         with colA2:
             ew_mincnt_cpv = st.number_input(
-                "Min count (CPV)", 1, 100_000, MIN_COUNT_DEFAULT, step=10, key="ew_mincnt_cpv"
+                "Min count (CPV)",
+                1,
+                100_000,
+                MIN_COUNT_DEFAULT,
+                step=10,
+                key="ew_mincnt_cpv",
             )
+
         render_section(
             "CPV sectors & groups (Division 2-digit, Group 3-digit)",
-            ["cpv_category","cpv_div2","cpv_grp3"],
+            ["cpv_category", "cpv_div2", "cpv_grp3"],
             "- Division (2-digit) maps to sector (e.g., 33 → Medical equipment).\n"
             "- Group (3-digit) within that division (e.g., 331 → Medical imaging).",
-            {"cpv_category":"CPV Category Name","cpv_div2":"CPV Division (code)","cpv_grp3":"CPV Group (code)"},
-            topk_val=ew_topk_cpv, mincnt_val=ew_mincnt_cpv
+            {"cpv_category": "CPV Category Name",
+             "cpv_div2": "CPV Division (code)",
+             "cpv_grp3": "CPV Group (code)"},
+            topk_val=ew_topk_cpv,
+            mincnt_val=ew_mincnt_cpv,
         )
 
+        # ---- Countries display settings ----
         st.markdown("#### Countries display settings")
         colB1, colB2 = st.columns(2)
         with colB1:
             ew_topk_cty = st.number_input(
-                "Top-K (Countries)", 1, 100, TOP_K_DEFAULT, step=1, key="ew_topk_cty"
+                "Top-K (Countries)",
+                1,
+                100,
+                TOP_K_DEFAULT,
+                step=1,
+                key="ew_topk_cty",
             )
         with colB2:
             ew_mincnt_cty = st.number_input(
-                "Min count (Countries)", 1, 100_000, MIN_COUNT_DEFAULT, step=10, key="ew_mincnt_cty"
+                "Min count (Countries)",
+                1,
+                100_000,
+                MIN_COUNT_DEFAULT,
+                step=10,
+                key="ew_mincnt_cty",
             )
+
         render_section(
-            "Countries", ["country_name"], "Country of the tender (mapped from ISO code).",
-            {"country_name":"Country"},
-            topk_val=ew_topk_cty, mincnt_val=ew_mincnt_cty
+            "Countries",
+            ["country_name"],
+            "Country of the tender (mapped from ISO code).",
+            {"country_name": "Country"},
+            topk_val=ew_topk_cty,
+            mincnt_val=ew_mincnt_cty,
         )
 
+        # ---- Procedures display settings ----
         st.markdown("#### Procedures display settings")
         colC1, colC2 = st.columns(2)
         with colC1:
             ew_topk_proc = st.number_input(
-                "Top-K (Procedures)", 1, 100, TOP_K_DEFAULT, step=1, key="ew_topk_proc"
+                "Top-K (Procedures)",
+                1,
+                100,
+                TOP_K_DEFAULT,
+                step=1,
+                key="ew_topk_proc",
             )
         with colC2:
             ew_mincnt_proc = st.number_input(
-                "Min count (Procedures)", 1, 100_000, MIN_COUNT_DEFAULT, step=10, key="ew_mincnt_proc"
+                "Min count (Procedures)",
+                1,
+                100_000,
+                MIN_COUNT_DEFAULT,
+                step=10,
+                key="ew_mincnt_proc",
             )
+
         render_section(
-            "Procedure types", ["procedure_label"], "Standard TED procedure types.",
-            {"procedure_label":"Procedure"},
-            topk_val=ew_topk_proc, mincnt_val=ew_mincnt_proc
+            "Procedure types",
+            ["procedure_label"],
+            "Standard TED procedure types.",
+            {"procedure_label": "Procedure"},
+            topk_val=ew_topk_proc,
+            mincnt_val=ew_mincnt_proc,
         )
 
     # ---------------- Histogram + ECDF (early-warning only) ----------------
@@ -872,168 +929,6 @@ if is_early:
         if show_corr:
             _ = show_correlation_auto(df_f, title="Correlation matrix", min_abs=CORR_MIN_ABS)
 
-
-
-# ================== AGGREGATED WORKFLOW ==================
-elif looks_agg:
-    lower = {c.lower(): c for c in df_raw.columns}
-    rcol = lower.get("riskpct") or lower.get("risk%") or lower.get("risk_pct")
-    ccol = lower.get("count")
-    df = df_raw.copy()
-    df[rcol] = pd.to_numeric(df[rcol], errors="coerce")
-    df[ccol] = pd.to_numeric(df[ccol], errors="coerce")
-    if pd.notna(df[rcol].max()) and df[rcol].max() <= 1.5:
-        df[rcol] = df[rcol] * 100.0
-
-    df2, cat_cols = add_cpv_labels_for_aggregated(df)
-    if cat_cols is None: cat_cols = []
-
-    st.divider(); st.subheader("Summary KPIs")
-    st.caption("Number of groups, weighted overall Risk%, and highest group Risk%.")
-    groups = int(len(df2))
-    total_cnt = df2[ccol].sum(skipna=True)
-    weighted = (df2[rcol] * df2[ccol]).sum(skipna=True) / total_cnt if pd.notna(total_cnt) and total_cnt != 0 else np.nan
-    topgrp = df2[rcol].max(skipna=True)
-    k1, k2, k3 = st.columns(3)
-    with k1: st.metric("Groups", f"{groups:,}")
-    with k2: st.metric("Weighted Risk%", f"{weighted:.2f}%" if pd.notna(weighted) else "—")
-    with k3: st.metric("Top group Risk%", f"{topgrp:.2f}%" if pd.notna(topgrp) else "—")
-
-    df_rank = df2.copy().sort_values([rcol, ccol], ascending=[False, False]).reset_index(drop=True)
-    df_rank.index = df_rank.index + 1
-    total_riskw = (df_rank[rcol] * df_rank[ccol]).sum(skipna=True)
-    df_rank["Risk Weighted"] = (df_rank[rcol] * df_rank[ccol])
-    df_rank["Share Risk"] = (df_rank["Risk Weighted"] / total_riskw).fillna(0.0)
-    df_rank["Cum Share Risk"] = df_rank["Share Risk"].cumsum().clip(upper=1.0)
-    df_rank["Pareto 80%"] = (df_rank["Cum Share Risk"] <= 0.80)
-
-    st.markdown("### Ranked table (simple)")
-    st.caption(
-        "Each row represents a category sorted by **Risk%** and **Count**. "
-        "The **Pareto 80%** column marks groups that together account for roughly 80% of the total risk — "
-        "helping you identify the most influential categories."
-    )
-    code_col = None; name_col = None
-    if "cpv_grp3" in df_rank.columns and "CPV Group" in df_rank.columns:
-        code_col, name_col = "cpv_grp3", "CPV Group"
-    elif "cpv_div2" in df_rank.columns and "CPV Division" in df_rank.columns:
-        code_col, name_col = "cpv_div2", "CPV Division"
-    if code_col is not None:
-        df_basic = pd.DataFrame({
-            "Selected Category (code)": df_rank[code_col],
-            "Selected Category (name)": df_rank[name_col],
-            "Count (K)": (df_rank[ccol] / 1000.0).round(2),
-            "Risk%": df_rank[rcol].map(lambda v: f"{v:.2f}%"),
-            "Pareto 80%": df_rank["Pareto 80%"].astype(bool),
-        })
-    else:
-        other_cats = [c for c in df_rank.columns if c not in [rcol, ccol, "Risk Weighted", "Share Risk", "Cum Share Risk", "Pareto 80%"]
-                      and not np.issubdtype(df_rank[c].dtype, np.number)]
-        labels = _safe_labels(df_rank, other_cats)
-        df_basic = pd.DataFrame({
-            "Selected Category": labels,
-            "Count (K)": (df_rank[ccol] / 1000.0).round(2),
-            "Risk%": df_rank[rcol].map(lambda v: f"{v:.2f}%"),
-            "Pareto 80%": df_rank["Pareto 80%"].astype(bool),
-        })
-    st.dataframe(df_basic, use_container_width=True)
-    st.download_button("⬇️ Download ranked table (simple CSV)",
-                       data=df_basic.to_csv(index=False).encode("utf-8"),
-                       file_name="ranked_simple.csv", mime="text/csv", use_container_width=True)
-
-    st.markdown("### Risk vs Count (scatter)")
-    logx = st.toggle("Log scale for Count", value=True)
-    xvals = df_rank[ccol].astype(float); yvals = df_rank[rcol].astype(float)
-    labels = _safe_labels(df_rank, cat_cols)
-    fig_sc = go.Figure(go.Scatter(x=xvals, y=yvals, mode="markers", text=labels,
-                                  marker=dict(size=9, color=BRAND["primary"], opacity=0.7),
-                                  hovertemplate="<b>%{text}</b><br>Count: %{x:,.0f}<br>Risk%: %{y:.2f}%<extra></extra>"))
-    fig_sc.update_layout(xaxis=dict(title="Count", type="log" if logx else "linear"),
-                         yaxis=dict(title="Risk %", range=[0, 100]), margin=dict(t=40))
-    st.plotly_chart(fig_sc, use_container_width=True)
-    st.caption("Each point represents a group; hover to see details.")
-
-    # --- Groups by Risk% & Count section ---
-    st.markdown("### Groups by Risk% & Count")
-    st.caption("Shows top categories by their risk percentage and record count.")
-
-    st.markdown("##### Chart display settings")
-    st.markdown("""
-<style>
-[data-testid="stNumberInput"] > div > div { padding-bottom: .25rem; }
-[data-testid="stNumberInput"] label { font-size: 0.9rem; }
-</style>
-""", unsafe_allow_html=True)
-    c_topk, c_mincnt, _ = st.columns([1, 1, 1], gap="small")
-
-    with c_topk:
-        topk = st.number_input(
-            "Top-K (max groups to show)",
-            min_value=1, max_value=100, value=TOP_K_DEFAULT, step=1, key="agg_topk"
-        )
-    with c_mincnt:
-        mincnt = st.number_input(
-            "Min count (rows)",
-            min_value=1, max_value=100_000, value=MIN_COUNT_DEFAULT, step=10, key="agg_mincnt"
-        )
-
-    df_rank_f = df_rank[df_rank[ccol] >= int(mincnt)].copy()
-    k_eff   = min(int(topk), len(df_rank_f))
-    top_tbl = df_rank_f.sort_values([rcol, ccol], ascending=[False, False]).head(k_eff).iloc[::-1]
-
-    if cat_cols:
-        sub = top_tbl[cat_cols]
-        if isinstance(sub, pd.Series):
-            sub = sub.to_frame()
-        x = sub.astype(str).agg(" — ".join, axis=1)
-    else:
-        x = pd.Series([f"Group {i+1}" for i in range(len(top_tbl))], index=top_tbl.index)
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=x, y=top_tbl[rcol], name="Risk%", yaxis="y1",
-                     hovertemplate="<b>%{x}</b><br>Risk%: %{y:.2f}%<extra></extra>"))
-    fig.add_trace(go.Bar(x=x, y=(top_tbl[ccol]/1000.0), name="Count (K)", yaxis="y2", opacity=0.60,
-                     hovertemplate="<b>%{x}</b><br>Count: %{y:,.1f}K<extra></extra>"))
-    fig.update_layout(
-        xaxis=dict(title="Group"),
-        yaxis=dict(title="Risk %", range=[0,100]),
-        yaxis2=dict(title="Count (K)", overlaying="y", side="right"),
-        barmode="group",
-        legend=dict(orientation="h", y=1.02, x=1, xanchor="right"),
-        margin=dict(t=60)
-    )
-    st.plotly_chart(fig, use_container_width=True, key="chart_groups_risk_count")
-
-    st.markdown("### Cumulative risk vs cumulative count (Pareto view)")
-    st.caption("""
-    **What this shows (80/20 idea):** how concentrated the total risk is across groups.
-    A steep curve means that a small number of categories (the top ~20%) account for most of the total risk (≈80%).
-    The **Gini coefficient** below measures this concentration — higher values mean stronger inequality.
-    """)
-    df_rank["_tmp_share_cnt"] = (df_rank[ccol] / df_rank[ccol].sum()).fillna(0.0)
-    df_rank["Cum Share Count"] = df_rank["_tmp_share_cnt"].cumsum().clip(upper=1.0)
-    xg = np.concatenate([[0.0], df_rank["Cum Share Count"].values])
-    yg = np.concatenate([[0.0], df_rank["Cum Share Risk"].values])
-    labels_pareto = ["(start)"] + _safe_labels(df_rank, cat_cols).tolist()
-    auc = np.trapz(yg, xg); gini = 1.0 - 2.0 * auc
-    fig_l = go.Figure()
-    fig_l.add_trace(go.Scatter(
-        x=xg, y=yg, mode="lines+markers", name="Cumulative risk",
-        text=labels_pareto,
-        hovertemplate="<b>%{text}</b><br>Cum Count: %{x:.1%}<br>Cum Risk: %{y:.1%}<extra></extra>"
-    ))
-    fig_l.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="Equality line", line=dict(dash="dash")))
-    fig_l.update_layout(xaxis=dict(title="Cumulative share of Count", range=[0, 1]),
-                        yaxis=dict(title="Cumulative share of Risk",  range=[0, 1]), margin=dict(t=40))
-    st.plotly_chart(fig_l, use_container_width=True)
-    st.metric("Gini (risk concentration)", f"{gini:.3f}")
-
-    if show_corr:
-        lower_cols = [c.lower() for c in df2.columns]
-        cpv_only = (("cpv_div2" in lower_cols or "cpv_grp3" in lower_cols) and
-                    set(lower_cols).issubset({"cpv_div2","cpv_grp3",rcol.lower(),ccol.lower(),"cpv division","cpv group"}))
-        if not cpv_only:
-            _ = show_correlation_auto(df2, title="Correlation matrix", min_abs=CORR_MIN_ABS)
 
 # ================== AGGREGATED WORKFLOW ==================
 elif looks_agg:

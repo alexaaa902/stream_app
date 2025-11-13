@@ -1229,7 +1229,7 @@ with t1:
                f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
                f"for this demo."
            )
-           
+
         tau_val = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
     st.divider()
@@ -1268,7 +1268,7 @@ with t1:
     if fix_on:
         tender_supplyType = inferred_supply
 
-    left, right = st.columns([1, 3])
+        left, right = st.columns([1, 3])
     with left:
         run_single = st.button("🔮 Predict", use_container_width=True)
     with right:
@@ -1284,7 +1284,9 @@ with t1:
         errors = []
 
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
-            errors.append(f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR.")
+            errors.append(
+                f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR."
+            )
 
         if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
             errors.append(
@@ -1299,9 +1301,12 @@ with t1:
             )
 
         if errors:
-            st.error("Please fix the following before requesting a prediction:\n\n- " + "\n- ".join(errors))
+            st.error(
+                "Please fix the following before requesting a prediction:\n\n- "
+                + "\n- ".join(errors)
+            )
             st.stop()
-    
+
         payload = {
             "tender_country": tender_country,
             "tender_procedureType": tender_procedureType,
@@ -1314,6 +1319,7 @@ with t1:
             "lot_bidsCount_log": float(np.log1p(lot_bidsCount)),
             "target_duration": 700,
         }
+
         try:
             res = api_predict(payload, tau=float(tau_val))
             pred = float(res.get("predicted_days", float("nan")))
@@ -1326,16 +1332,23 @@ with t1:
             st.markdown("</div>", unsafe_allow_html=True)
 
             k1, k2, k3 = st.columns([1, 1, 1])
-            with k1: kpi_card("Predicted days", f"{pred:,.0f}", f"τ = {float(tau_val):.0f} days")
-            with k2: kpi_card("Risk flag", "HIGH" if flag else "LOW", "predicted vs τ")
-            with k3: kpi_card("Model", res.get("model_used", "—"), f"API: {api_base_in}")
+            with k1:
+                kpi_card("Predicted days", f"{pred:,.0f}", f"τ = {float(tau_val):.0f} days")
+            with k2:
+                kpi_card("Risk flag", "HIGH" if flag else "LOW", "predicted vs τ")
+            with k3:
+                kpi_card("Model", res.get("model_used", "—"), f"API: {api_base_in}")
 
-            with st.expander("Raw response"): st.json(res)
-            with st.expander("Sanity check"): st.info(f"predicted_days={pred:.1f} vs τ={float(tau_val):.0f} → risk_flag={flag}")
+            with st.expander("Raw response"):
+                st.json(res)
+            with st.expander("Sanity check"):
+                st.info(
+                    f"predicted_days={pred:.1f} vs τ={float(tau_val):.0f} → risk_flag={flag}"
+                )
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
-            st.error(f"Prediction failed: {e}")
+            st.error(f"Prediction failed: {e}")        
 
 # ================== Tab 2: Batch from CSV ==================
 with t2:

@@ -29,6 +29,7 @@ def rows_json_safe_from_list(rows: list[dict]) -> list[dict]:
 # ================== CONFIG ==================
 DEFAULT_BASE = "data"
 MIN_COUNT_DEFAULT = 100
+MIN_SINGLE_EST_PRICE = 221_000  # ελάχιστη τιμή για το quick single demo (EUR)
 TOP_K_DEFAULT     = 15
 HIST_BINS_DEFAULT = 40
 CORR_MIN_ABS      = 0.30
@@ -1192,7 +1193,13 @@ with t1:
 
     with col2:
         tender_year  = st.number_input("Year", 2008, 2025, 2023)
-        tender_estimatedPrice_EUR = st.number_input("Estimated price (EUR)", 0, 50_000_000, 3_000_000)
+        tender_estimatedPrice_EUR = st.number_input(
+            "Estimated price (EUR)",
+             min_value=MIN_SINGLE_EST_PRICE,
+             max_value=50_000_000,
+             value=max(MIN_SINGLE_EST_PRICE, 3_000_000),
+              help=f"For this demo, values below about {MIN_SINGLE_EST_PRICE:,.0f} EUR are out of scope.",
+        )
         lot_bidsCount = st.number_input("Bids count", 0, 1000, 4)
         tau_val       = st.number_input("τ (threshold, days)", 100, 1200, 720)
 

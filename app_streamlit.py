@@ -1180,6 +1180,7 @@ with t1:
     st.caption("⚡ Get a fresh prediction, independent of the file you opened.")
     col1, col2 = st.columns(2)
     country_opts = sorted(COUNTRY_MAP.keys())
+
     with col1:
         tender_country = st.selectbox(
             "Country (tender_country)",
@@ -1190,7 +1191,11 @@ with t1:
         PROC_REV = {v: k for k, v in PROC_MAP.items()}
         proc_labels = list(PROC_REV.keys())
         default_label = PROC_MAP.get("OPEN", proc_labels[0])
-        proc_label_sel = st.selectbox("Procedure type", proc_labels, index=proc_labels.index(default_label))
+        proc_label_sel = st.selectbox(
+            "Procedure type",
+            proc_labels,
+            index=proc_labels.index(default_label),
+        )
         tender_procedureType = PROC_REV[proc_label_sel]
 
         tender_supplyType = st.selectbox("Supply type", ["WORKS", "SUPPLIES", "SERVICES"])
@@ -1201,7 +1206,6 @@ with t1:
             value=2023,
             step=1,
         )
-
         # inline warning για year
         if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
             st.warning(
@@ -1216,19 +1220,21 @@ with t1:
             value=3_000_000.0,
         )
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
-            st.warning(f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR.")
+            st.warning(
+                f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR."
+            )
 
         lot_bidsCount = st.number_input(
             "Bids count",
-             value=4,
-             step=1,
+            value=4,
+            step=1,
         )
-       # inline warning για bids
-       if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
-           st.warning(
-               f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
-               f"for this demo."
-           )
+        # inline warning για bids
+        if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
+            st.warning(
+                f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
+                f"for this demo."
+            )
 
         tau_val = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
@@ -1242,10 +1248,15 @@ with t1:
         return f"{c} — {name}"
 
     cpv_codes = [
-        "45200000","45100000","30200000","33100000","09100000",
-        "71300000","80500000","72000000","90400000","34900000","79900000","50500000"
+        "45200000", "45100000", "30200000", "33100000", "09100000",
+        "71300000", "80500000", "72000000", "90400000", "34900000",
+        "79900000", "50500000",
     ]
-    cpv_mode = st.selectbox("Main CPV", ["Custom…"] + [cpv_label(c) for c in cpv_codes], index=1)
+    cpv_mode = st.selectbox(
+        "Main CPV",
+        ["Custom…"] + [cpv_label(c) for c in cpv_codes],
+        index=1,
+    )
     tender_mainCpv = (
         st.text_input("Enter CPV code (8 digits)", "45200000")
         if cpv_mode == "Custom…" else cpv_mode.split(" — ")[0]
@@ -1254,21 +1265,29 @@ with t1:
     def infer_supply_from_cpv(cpv: str) -> str:
         c = "".join(ch for ch in str(cpv) if ch.isdigit())[:8].ljust(2, "0")
         div = int(c[:2]) if c[:2].isdigit() else -1
-        if div == 45: return "WORKS"
-        if 3 <= div <= 44: return "SUPPLIES"
-        if div >= 50: return "SERVICES"
+        if div == 45:
+            return "WORKS"
+        if 3 <= div <= 44:
+            return "SUPPLIES"
+        if div >= 50:
+            return "SERVICES"
         return "UNKNOWN"
 
     inferred_supply = infer_supply_from_cpv(tender_mainCpv)
     need_fix = inferred_supply != "UNKNOWN" and inferred_supply != tender_supplyType
-    fix_on = st.toggle(f"Auto-fix supply type to {inferred_supply}", value=True) if need_fix else False
+    fix_on = st.toggle(
+        f"Auto-fix supply type to {inferred_supply}", value=True
+    ) if need_fix else False
     if need_fix and not fix_on:
-        st.error("Supply type and CPV disagree. Enable Auto-fix or change one of them to continue.")
+        st.error(
+            "Supply type and CPV disagree. Enable Auto-fix or change one of them to continue."
+        )
         st.stop()
     if fix_on:
         tender_supplyType = inferred_supply
 
-        left, right = st.columns([1, 3])
+    # κουμπί predict
+    left, right = st.columns([1, 3])
     with left:
         run_single = st.button("🔮 Predict", use_container_width=True)
     with right:
@@ -1276,12 +1295,18 @@ with t1:
 
     if run_single:
         inferred_supply2 = infer_supply_from_cpv(tender_mainCpv)
-        if inferred_supply2 != "UNKNOWN" and inferred_supply2 != tender_supplyType and not st.session_state.get("fix_supply_cpv", False):
-            st.error("Supply type and CPV still disagree. Enable Auto-fix or change one of them to continue.")
+        if (
+            inferred_supply2 != "UNKNOWN"
+            and inferred_supply2 != tender_supplyType
+            and not st.session_state.get("fix_supply_cpv", False)
+        ):
+            st.error(
+                "Supply type and CPV still disagree. Enable Auto-fix or change one of them to continue."
+            )
             st.stop()
 
         # ---- business validation (English messages) ----
-        errors = []
+        errors: list[str] = []
 
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
             errors.append(
@@ -1348,7 +1373,7 @@ with t1:
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
-            st.error(f"Prediction failed: {e}")        
+            st.error(f"Prediction failed: {e}")
 
 # ================== Tab 2: Batch from CSV ==================
 with t2:

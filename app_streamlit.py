@@ -29,7 +29,11 @@ def rows_json_safe_from_list(rows: list[dict]) -> list[dict]:
 # ================== CONFIG ==================
 DEFAULT_BASE = "data"
 MIN_COUNT_DEFAULT = 100
-MIN_SINGLE_EST_PRICE = 221_000  # ελάχιστη τιμή για το quick single demo (EUR)
+MIN_SINGLE_EST_PRICE = 221_000   # or whatever you decided
+MIN_SINGLE_YEAR      = 2008
+MAX_SINGLE_YEAR      = 2025
+MIN_SINGLE_BIDS      = 1
+MAX_SINGLE_BIDS      = 200
 TOP_K_DEFAULT     = 15
 HIST_BINS_DEFAULT = 40
 CORR_MIN_ABS      = 0.30
@@ -1192,15 +1196,28 @@ with t1:
         tender_supplyType = st.selectbox("Supply type", ["WORKS", "SUPPLIES", "SERVICES"])
 
     with col2:
-        tender_year  = st.number_input("Year", 2008, 2025, 2023)
+        tender_year = st.number_input(
+            "Year",
+            min_value=1900,
+            max_value=2100,
+            value=2023,
+        )
         tender_estimatedPrice_EUR = st.number_input(
             "Estimated price (EUR)",
-             min_value=MIN_SINGLE_EST_PRICE,
-             max_value=50_000_000,
-             value=max(MIN_SINGLE_EST_PRICE, 3_000_000),
-              help=f"For this demo, values below about {MIN_SINGLE_EST_PRICE:,.0f} EUR are out of scope.",
+            min_value=0.0,
+            max_value=50_000_000.0,
+            value=3_000_000.0,
         )
-        lot_bidsCount = st.number_input("Bids count", 0, 1000, 4)
+        # custom validation (English)
+        if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
+            st.warning(f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR.")
+
+        lot_bidsCount = st.number_input(
+            "Bids count",
+             min_value=0,
+             max_value=1000,
+             value=4,
+        )
         tau_val       = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
     st.divider()
@@ -1251,6 +1268,28 @@ with t1:
             st.error("Supply type and CPV still disagree. Enable Auto-fix or change one of them to continue.")
             st.stop()
 
+        # ---- business validation (English messages) ----
+        errors = []
+
+        if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
+            errors.append(f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR.")
+
+        if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
+            errors.append(
+                f"Year must be between {MIN_SINGLE_YEAR} and {MAX_SINGLE_YEAR} "
+                f"(got {int(tender_year)})."
+            )
+
+        if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
+            errors.append(
+                f"Bids count must be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
+                f"(got {int(lot_bidsCount)})."
+            )
+
+        if errors:
+            st.error("Please fix the following before requesting a prediction:\n\n- " + "\n- ".join(errors))
+            st.stop()
+    
         payload = {
             "tender_country": tender_country,
             "tender_procedureType": tender_procedureType,

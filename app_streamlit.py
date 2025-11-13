@@ -29,7 +29,7 @@ def rows_json_safe_from_list(rows: list[dict]) -> list[dict]:
 # ================== CONFIG ==================
 DEFAULT_BASE = "data"
 MIN_COUNT_DEFAULT = 100
-MIN_SINGLE_EST_PRICE = 221_000  
+MIN_SINGLE_EST_PRICE = 221_000
 MIN_SINGLE_YEAR      = 2008
 MAX_SINGLE_YEAR      = 2025
 MIN_SINGLE_BIDS      = 1
@@ -714,6 +714,23 @@ if is_early:
             "Risk% = percentage of high-risk rows per category. "
             "Count = number of rows per category (minimum count applies)."
         )
+        # πόσα distinct groups υπάρχουν ΜΕΤΑ τα φίλτρα
+        # CPV groups
+        n_cpv_groups = 0
+        if {"cpv_category", "cpv_div2", "cpv_grp3"}.issubset(df_f.columns):
+            n_cpv_groups = int(
+                df_f[["cpv_category", "cpv_div2", "cpv_grp3"]]
+                .drop_duplicates()
+                .shape[0]
+            )
+        elif "cpv_category" in df_f.columns:
+            n_cpv_groups = int(df_f["cpv_category"].nunique())
+
+        # χώρες
+        n_countries = int(df_f["country_name"].nunique()) if "country_name" in df_f.columns else 0
+
+        # διαδικασίες
+        n_procs = int(df_f["procedure_label"].nunique()) if "procedure_label" in df_f.columns else 0
 
         # ✅ helper: παίρνει topk/mincnt σαν ορίσματα, ΔΕΝ χρησιμοποιεί ew_topk/ew_mincnt
         def render_section(
@@ -751,14 +768,17 @@ if is_early:
         st.markdown("#### CPV display settings")
         colA1, colA2 = st.columns(2)
         with colA1:
+            max_cpv = max(1, n_cpv_groups)
+            default_topk_cpv = min(TOP_K_DEFAULT, max_cpv)
             ew_topk_cpv = st.number_input(
                 "Top-K (CPV)",
-                1,
-                100,
-                TOP_K_DEFAULT,
+                min_value=1,
+                max_value=max_cpv,
+                value=default_topk_cpv,
                 step=1,
                 key="ew_topk_cpv",
             )
+
         with colA2:
             ew_mincnt_cpv = st.number_input(
                 "Min count (CPV)",
@@ -785,14 +805,17 @@ if is_early:
         st.markdown("#### Countries display settings")
         colB1, colB2 = st.columns(2)
         with colB1:
+            max_cty = max(1, n_countries)
+            default_topk_cty = min(TOP_K_DEFAULT, max_cty)
             ew_topk_cty = st.number_input(
                 "Top-K (Countries)",
-                1,
-                100,
-                TOP_K_DEFAULT,
+                min_value=1,
+                max_value=max_cty,
+                value=default_topk_cty,
                 step=1,
                 key="ew_topk_cty",
             )
+
         with colB2:
             ew_mincnt_cty = st.number_input(
                 "Min count (Countries)",
@@ -816,14 +839,17 @@ if is_early:
         st.markdown("#### Procedures display settings")
         colC1, colC2 = st.columns(2)
         with colC1:
+            max_proc = max(1, n_procs)
+            default_topk_proc = min(TOP_K_DEFAULT, max_proc)
             ew_topk_proc = st.number_input(
                 "Top-K (Procedures)",
-                1,
-                100,
-                TOP_K_DEFAULT,
+                min_value=1,
+                max_value=max_proc,
+                value=default_topk_proc,
                 step=1,
                 key="ew_topk_proc",
             )
+
         with colC2:
             ew_mincnt_proc = st.number_input(
                 "Min count (Procedures)",

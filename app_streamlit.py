@@ -29,7 +29,7 @@ def rows_json_safe_from_list(rows: list[dict]) -> list[dict]:
 # ================== CONFIG ==================
 DEFAULT_BASE = "data"
 MIN_COUNT_DEFAULT = 100
-MIN_SINGLE_EST_PRICE = 221_000   
+MIN_SINGLE_EST_PRICE = 221_000  
 MIN_SINGLE_YEAR      = 2008
 MAX_SINGLE_YEAR      = 2025
 MIN_SINGLE_BIDS      = 1
@@ -1201,13 +1201,20 @@ with t1:
             value=2023,
             step=1,
         )
+
+        # inline warning για year
+        if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
+            st.warning(
+                f"Year should be between {MIN_SINGLE_YEAR} and {MAX_SINGLE_YEAR} "
+                f"for this demo."
+            )
+
         tender_estimatedPrice_EUR = st.number_input(
             "Estimated price (EUR)",
             min_value=0.0,
             max_value=50_000_000.0,
             value=3_000_000.0,
         )
-        # custom validation (English)
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
             st.warning(f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR.")
 
@@ -1216,6 +1223,13 @@ with t1:
              value=4,
              step=1,
         )
+       # inline warning για bids
+       if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
+           st.warning(
+               f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
+               f"for this demo."
+           )
+           
         tau_val = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
     st.divider()

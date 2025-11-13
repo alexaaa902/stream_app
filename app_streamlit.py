@@ -1283,11 +1283,10 @@ with t1:
 with t2:
     if not can_batch:
         banner(
-            "This tab works only with **raw tender records/CSVs** (no model outputs, e.g. <code>predicted_days</code>, "
-    "<code>risk_flag</code>) or aggregated summaries, e.g. Risk% and Count per group).<br><br>"
+            "This tab works only with raw tender records/CSVs (no model outputs, e.g. predicted_days, "
+    "risk_flag, or aggregated summaries, e.g. Risk% and Count per group).<br><br>"
             "Open a procurement file with the original inputs, e.g. one row per tender, "
-    "containing at least:<br>"
-    "<b>tender_country</b>, <b>tender_mainCpv</b>, <b>tender_year</b> "
+    "containing at least:<br>""<b>tender_country</b>, <b>tender_mainCpv</b>, <b>tender_year</b> "
     "(optionally also procedure type, supply type, estimated price, bids count).",
     "warn",
         )

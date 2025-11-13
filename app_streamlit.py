@@ -29,7 +29,7 @@ def rows_json_safe_from_list(rows: list[dict]) -> list[dict]:
 # ================== CONFIG ==================
 DEFAULT_BASE = "data"
 MIN_COUNT_DEFAULT = 100
-MIN_SINGLE_EST_PRICE = 221_000   # or whatever you decided
+MIN_SINGLE_EST_PRICE = 221_000   
 MIN_SINGLE_YEAR      = 2008
 MAX_SINGLE_YEAR      = 2025
 MIN_SINGLE_BIDS      = 1
@@ -1198,9 +1198,8 @@ with t1:
     with col2:
         tender_year = st.number_input(
             "Year",
-            min_value=1900,
-            max_value=2100,
             value=2023,
+            step=1,
         )
         tender_estimatedPrice_EUR = st.number_input(
             "Estimated price (EUR)",
@@ -1214,11 +1213,10 @@ with t1:
 
         lot_bidsCount = st.number_input(
             "Bids count",
-             min_value=0,
-             max_value=1000,
              value=4,
+             step=1,
         )
-        tau_val       = st.number_input("τ (threshold, days)", 100, 1200, 720)
+        tau_val = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
     st.divider()
     st.markdown("#### Tender CPV category")

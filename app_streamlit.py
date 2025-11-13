@@ -1013,6 +1013,10 @@ elif looks_agg:
     st.markdown("### Groups by Risk% & Count")
     st.caption("Shows top categories by their risk percentage and record count.")
 
+    # πόσες ομάδες υπάρχουν συνολικά στο aggregated dataset
+    n_groups = int(len(df_rank))
+    default_topk = min(TOP_K_DEFAULT, n_groups) if n_groups > 0 else TOP_K_DEFAULT
+
     st.markdown("##### Chart display settings")
     st.markdown("""
 <style>
@@ -1025,7 +1029,11 @@ elif looks_agg:
     with c_topk:
         topk = st.number_input(
             "Top-K (max groups to show)",
-            min_value=1, max_value=100, value=TOP_K_DEFAULT, step=1, key="agg_topk"
+            min_value=1,
+            max_value=max(1, n_groups),
+            value=default_topk,
+            step=1,
+            key="agg_topk",
         )
     with c_mincnt:
         mincnt = st.number_input(
@@ -1275,9 +1283,13 @@ with t1:
 with t2:
     if not can_batch:
         banner(
-            "This tab works only with **raw input CSVs** (no model outputs and no aggregated summaries). "
-            "Open a procurement file with columns like <b>tender_country</b>, <b>tender_mainCpv</b>, <b>tender_year</b> to enable batch predictions.",
-            "warn",
+            "This tab works only with **raw tender records/CSVs** (no model outputs, e.g. <code>predicted_days</code>, "
+    "<code>risk_flag</code>) or aggregated summaries, e.g. Risk% and Count per group).<br><br>"
+            "Open a procurement file with the original inputs, e.g. one row per tender, "
+    "containing at least:<br>"
+    "<b>tender_country</b>, <b>tender_mainCpv</b>, <b>tender_year</b> "
+    "(optionally also procedure type, supply type, estimated price, bids count).",
+    "warn",
         )
     else:
         st.caption(

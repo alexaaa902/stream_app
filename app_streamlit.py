@@ -1158,7 +1158,7 @@ if st.session_state.get("_last_api_base") != api_base_in:
         st.cache_resource.clear() # fallback
 st.session_state["api_base"] = api_base_in
 
-c_conn = st.columns([1,1,2,2])
+c_conn = st.columns([1,1,2])
 with c_conn[0]:
     if st.button("Test API", use_container_width=True):
         try:
@@ -1191,8 +1191,6 @@ with c_conn[1]:
     status_pill("ready" if ok else "unreachable", "ok" if ok else "error")
 with c_conn[2]:
     st.link_button("📘 Open /docs", f"{api_base_in.rstrip('/')}/docs", use_container_width=True)
-with c_conn[3]:
-    st.link_button("📒 Open /redoc", f"{api_base_in.rstrip('/')}/redoc", use_container_width=True)
 
 # Decide when batch is allowed (only for raw CSVs)
 looks_early = is_model_output_like(df_raw)

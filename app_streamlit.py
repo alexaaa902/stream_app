@@ -1102,7 +1102,8 @@ elif looks_agg:
     st.markdown("### Cumulative risk vs cumulative count (Pareto view)")
     st.caption("""
     **What this shows (80/20 idea):** how concentrated the total risk is across groups.
-    A steep curve means that a small number of categories (the top ~20%) account for most of the total risk (≈80%).
+    The Pareto curve shows how total risk accumulates across categories. Curves close to the equality line indicate a more even risk distribution, 
+    while steeper curves reveal higher risk concentration. 
     The **Gini coefficient** below measures this concentration — higher values mean stronger inequality.
     """)
 

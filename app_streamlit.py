@@ -1105,12 +1105,32 @@ elif looks_agg:
     A steep curve means that a small number of categories (the top ~20%) account for most of the total risk (≈80%).
     The **Gini coefficient** below measures this concentration — higher values mean stronger inequality.
     """)
-    df_rank["_tmp_share_cnt"] = (df_rank[ccol] / df_rank[ccol].sum()).fillna(0.0)
-    df_rank["Cum Share Count"] = df_rank["_tmp_share_cnt"].cumsum().clip(upper=1.0)
-    xg = np.concatenate([[0.0], df_rank["Cum Share Count"].values])
-    yg = np.concatenate([[0.0], df_rank["Cum Share Risk"].values])
-    labels_pareto = ["(start)"] + _safe_labels(df_rank, cat_cols).tolist()
-    auc = np.trapz(yg, xg); gini = 1.0 - 2.0 * auc
+# --- Risk-weighted contribution ---
+df_rank["Risk Weighted"] = df_rank[rcol] * df_rank[ccol]
+
+# --- Shares ---
+df_rank["_share_cnt"] = (df_rank[ccol] / df_rank[ccol].sum()).fillna(0.0)
+df_rank["_share_risk"] = (
+    df_rank["Risk Weighted"] / df_rank["Risk Weighted"].sum()
+).fillna(0.0)
+
+# ✅ ΣΗΜΑΝΤΙΚΟ: Lorenz curve θέλει ταξινόμηση από ΜΙΚΡΟ → ΜΕΓΑΛΟ
+df_lorenz = df_rank.sort_values("_share_risk", ascending=True).copy()
+
+# --- Cumulative shares ---
+df_lorenz["Cum Share Count"] = df_lorenz["_share_cnt"].cumsum().clip(upper=1.0)
+df_lorenz["Cum Share Risk"]  = df_lorenz["_share_risk"].cumsum().clip(upper=1.0)
+
+# --- Curve & Gini ---
+xg = np.r_[0.0, df_lorenz["Cum Share Count"].values]
+yg = np.r_[0.0, df_lorenz["Cum Share Risk"].values]
+
+auc  = np.trapz(yg, xg)
+gini = 1.0 - 2.0 * auc
+
+# αριθμητική ασφάλεια
+gini = float(np.clip(gini, 0.0, 1.0))
+
     fig_l = go.Figure()
     fig_l.add_trace(go.Scatter(
         x=xg, y=yg, mode="lines+markers", name="Cumulative risk",

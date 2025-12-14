@@ -1105,7 +1105,7 @@ elif looks_agg:
     A steep curve means that a small number of categories (the top ~20%) account for most of the total risk (≈80%).
     The **Gini coefficient** below measures this concentration — higher values mean stronger inequality.
     """)
-# --- Risk-weighted contribution ---
+
 # --- Risk-weighted contribution ---
 df_rank["Risk Weighted"] = df_rank[rcol].astype(float) * df_rank[ccol].astype(float)
 
@@ -1113,7 +1113,7 @@ df_rank["Risk Weighted"] = df_rank[rcol].astype(float) * df_rank[ccol].astype(fl
 cnt_sum = float(df_rank[ccol].sum()) if pd.notna(df_rank[ccol].sum()) else 0.0
 riskw_sum = float(df_rank["Risk Weighted"].sum()) if pd.notna(df_rank["Risk Weighted"].sum()) else 0.0
 
-df_rank["_share_cnt"]  = (df_rank[ccol] / cnt_sum).fillna(0.0) if cnt_sum > 0 else 0.0
+df_rank["_share_cnt"] = (df_rank[ccol] / cnt_sum).fillna(0.0) if cnt_sum > 0 else 0.0
 df_rank["_share_risk"] = (df_rank["Risk Weighted"] / riskw_sum).fillna(0.0) if riskw_sum > 0 else 0.0
 
 # ✅ Lorenz curve wants sorting from LOW → HIGH contribution
@@ -1121,14 +1121,14 @@ df_lorenz = df_rank.sort_values("_share_risk", ascending=True).copy()
 
 # --- Cumulative shares ---
 df_lorenz["Cum Share Count"] = df_lorenz["_share_cnt"].cumsum().clip(upper=1.0)
-df_lorenz["Cum Share Risk"]  = df_lorenz["_share_risk"].cumsum().clip(upper=1.0)
+df_lorenz["Cum Share Risk"] = df_lorenz["_share_risk"].cumsum().clip(upper=1.0)
 
 # --- Curve arrays ---
 xg = np.r_[0.0, df_lorenz["Cum Share Count"].values]
 yg = np.r_[0.0, df_lorenz["Cum Share Risk"].values]
 
 # --- Gini (area between equality line and Lorenz curve) ---
-auc  = np.trapz(yg, xg)
+auc = np.trapz(yg, xg)
 gini = float(np.clip(1.0 - 2.0 * auc, 0.0, 1.0))
 
 # labels πρέπει να αντιστοιχούν στη ΣΕΙΡΑ του df_lorenz
@@ -1147,19 +1147,25 @@ fig_l.add_trace(go.Scatter(
 ))
 fig_l.update_layout(
     xaxis=dict(title="Cumulative share of Count", range=[0, 1]),
-    yaxis=dict(title="Cumulative share of Risk",  range=[0, 1]),
+    yaxis=dict(title="Cumulative share of Risk", range=[0, 1]),
     margin=dict(t=40)
 )
 st.plotly_chart(fig_l, use_container_width=True)
 st.metric("Gini (risk concentration)", f"{gini:.3f}")
 
-    if show_corr:
-        lower_cols = [c.lower() for c in df2.columns]
-        cpv_only = (("cpv_div2" in lower_cols or "cpv_grp3" in lower_cols) and
-                    set(lower_cols).issubset({"cpv_div2","cpv_grp3",rcol.lower(),ccol.lower(),"cpv division","cpv group"}))
-        if not cpv_only:
-            _ = show_correlation_auto(df2, title="Correlation matrix", min_abs=CORR_MIN_ABS)
-
+# (προαιρετικά) correlation για aggregated που δεν είναι “μόνο CPV”
+if show_corr:
+    lower_cols = [c.lower() for c in df2.columns]
+    cpv_only = (
+        ("cpv_div2" in lower_cols or "cpv_grp3" in lower_cols)
+        and set(lower_cols).issubset({
+            "cpv_div2", "cpv_grp3",
+            rcol.lower(), ccol.lower(),
+            "cpv division", "cpv group"
+        })
+    )
+    if not cpv_only:
+        _ = show_correlation_auto(df2, title="Correlation matrix", min_abs=CORR_MIN_ABS)
 # ================== RAW BATCH INPUTS ==================
 else:
     st.divider()

@@ -1169,7 +1169,7 @@ elif looks_agg:
             _ = show_correlation_auto(df2, title="Correlation matrix", min_abs=CORR_MIN_ABS)
 
 # ================== RAW BATCH INPUTS ==================
- else
+else:
     st.divider()
     st.subheader("Preview (batch inputs)")
     st.caption("We show a small sample from the batch file you selected. It will be sent to the API from the 'Batch from CSV' tab.")

@@ -14,11 +14,12 @@ try:
     from .schemas import PredictRequest, PredictResponse  # if you have them
 except Exception:
     from pydantic import BaseModel
+
     class PredictRequest(BaseModel):
         # βασικά
         tender_country: Optional[str] = None
         tender_mainCpv: Optional[str] = None
-        tender_year:    Optional[int]  = None
+        tender_year: Optional[int] = None
         # πρόσθετα που αναφέρονται στο features.json
         tender_procedureType: Optional[str] = None
         tender_supplyType: Optional[str] = None
@@ -37,7 +38,13 @@ except Exception:
         predicted_days: float
         risk_flag: bool
         model_used: str
-        tau: float
+        tau_days: float
+        p_long: float
+        tau_prob: float
+        stage_used: str
+        pred_short: float
+        pred_long: float
+
 
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")
@@ -46,16 +53,6 @@ app = FastAPI(title="ProcureSight API", version="1.0")
 @app.get("/health")
 def health_check() -> dict:
     return {"ok": True}
-
-# Root: δείχνει αν τα μοντέλα είναι φορτωμένα
-@app.get("/")
-def root() -> dict:
-    try:
-        _ensure_models_loaded()
-        model_ok = bool(clf and reg_short and reg_long)
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": model_ok}
-    except Exception as e:
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": False, "error": str(e)}
 
 # ---------- Globals / defaults ----------
 features: Dict[str, Any] = {}
@@ -71,50 +68,76 @@ try:
 except Exception:
     lgb = None
 
+
 # ---------- Helpers ----------
 def _safe_num(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
+
 
 def _derive_cpv_parts(s: pd.Series):
     """Return cpv_div2, cpv_grp3 as numeric from an 8-digit cleaned CPV string."""
     s = s.astype(str).str.replace(r"[^\d]", "", regex=True).str.zfill(8)
     return _safe_num(s.str[:2]), _safe_num(s.str[:3])
 
-def _combine_hard(p, y_short, y_long, tau):
-    """Use long reg if prob>=tau; clamp to [1,1800]."""
+
+def _combine_hard(p, y_short, y_long, tau_prob):
+    """
+    2-stage HARD:
+      - αν p_long >= tau_prob => long reg
+      - αλλιώς => short reg
+    clamp to [1,1800]
+    """
     CAP_MIN, CAP_MAX = 1.0, 1800.0
-    use_long = (np.asarray(p, float) >= float(tau))
+    use_long = (np.asarray(p, float) >= float(tau_prob))
     out = np.where(use_long, np.asarray(y_long, float), np.asarray(y_short, float))
     return np.clip(out, CAP_MIN, CAP_MAX)
 
+
 def _year_bump_from_meta(year: Optional[int]) -> float:
+    """
+    Διαβάζει poly coeffs από meta["year_bump_info"]["poly_coeffs"] (σταθερός όρος πρώτος),
+    και επιστρέφει per-year bump (0..max_b).
+    """
     if year is None or not meta:
         return 0.0
     bump = meta.get("bump", {}) or {}
     if (bump.get("mode") != "year-aware") or (meta.get("year_bump_info") is None):
         return 0.0
-    info = meta["year_bump_info"]
+
+    info = meta["year_bump_info"] or {}
     coeffs = info.get("poly_coeffs", [])
     max_b = float(info.get("max_b", bump.get("year_bump_max", 5.0)))
+
     if not coeffs:
         return 0.0
-    y = float(year); val = 0.0
+
+    y = float(year)
+    val = 0.0
     for i, a in enumerate(coeffs):
         val += float(a) * (y ** i)
+
     return float(np.clip(val, 0.0, max_b))
 
+
 def _apply_year_bump(yhat: float, tender_year: Optional[int]) -> float:
-    """One-sided triangular bump around 720 using meta poly."""
+    """One-sided triangular bump around ~720 using meta poly (όπως στο training)."""
     b = _year_bump_from_meta(tender_year)
+
     LOW, HIGH, CENTER, SNAP_FROM, SNAP_TO = 670.0, 720.0, 720.0, 715.0, 720.0
     yh = float(yhat)
+
+    # bump μόνο στο παράθυρο [LOW, HIGH)
     if yh < LOW or yh >= HIGH or b <= 0:
         return yh
-    w = (yh - LOW) / max(CENTER - LOW, 1e-9)
+
+    w = (yh - LOW) / max(CENTER - LOW, 1e-9)  # 0..1
     yh2 = yh + b * max(min(w, 1.0), 0.0)
+
     if SNAP_FROM <= yh2 < SNAP_TO:
         yh2 = SNAP_TO
+
     return float(yh2)
+
 
 def _align_to_booster(X: pd.DataFrame, booster) -> pd.DataFrame:
     """
@@ -127,29 +150,28 @@ def _align_to_booster(X: pd.DataFrame, booster) -> pd.DataFrame:
         exp = list(booster.feature_name())
     except Exception:
         exp = None
+
     if not exp or any((name is None) or (name == "") for name in exp):
         return X  # nothing to do
 
-    # add missing
     missing = [c for c in exp if c not in X.columns]
     for c in missing:
         X[c] = np.nan
 
-    # (optional) you can log extras if needed:
-    # extras = [c for c in X.columns if c not in exp]
-    # if extras: print("DEBUG extras dropped:", extras)
-
+    # drop extras by selecting only exp
     return X[exp]
+
 
 # ---------- Loader ----------
 def _load_artifacts() -> dict:
     global clf, reg_short, reg_long, features, meta, LONG_THR_DEFAULT
+
     model_dir = Path(__file__).resolve().parent / "model"
     f_clf = model_dir / "stage1_classifier.txt"
-    f_rs  = model_dir / "stage2_reg_short.txt"
-    f_rl  = model_dir / "stage2_reg_long.txt"
-    f_feat= model_dir / "features.json"
-    f_meta= model_dir / "meta.json"
+    f_rs = model_dir / "stage2_reg_short.txt"
+    f_rl = model_dir / "stage2_reg_long.txt"
+    f_feat = model_dir / "features.json"
+    f_meta = model_dir / "meta.json"
 
     if not model_dir.exists():
         raise RuntimeError(f"Model dir not found: {model_dir}")
@@ -158,17 +180,25 @@ def _load_artifacts() -> dict:
 
     clf = lgb.Booster(model_file=str(f_clf))
     reg_short = lgb.Booster(model_file=str(f_rs))
-    reg_long  = lgb.Booster(model_file=str(f_rl))
+    reg_long = lgb.Booster(model_file=str(f_rl))
 
     with open(f_feat, "r", encoding="utf-8") as f:
         features = json.load(f)
+
     if f_meta.exists():
         with open(f_meta, "r", encoding="utf-8") as f:
             meta = json.load(f)
         LONG_THR_DEFAULT = float(meta.get("long_threshold_days", LONG_THR_DEFAULT))
 
-    return {"clf": clf, "reg_short": reg_short, "reg_long": reg_long,
-            "features": features, "meta": meta, "LONG_THR_DEFAULT": LONG_THR_DEFAULT}
+    return {
+        "clf": clf,
+        "reg_short": reg_short,
+        "reg_long": reg_long,
+        "features": features,
+        "meta": meta,
+        "LONG_THR_DEFAULT": LONG_THR_DEFAULT,
+    }
+
 
 def _ensure_models_loaded():
     global clf, reg_short, reg_long, features, meta, LONG_THR_DEFAULT
@@ -176,12 +206,24 @@ def _ensure_models_loaded():
         return
     res = _load_artifacts()
     if isinstance(res, dict):
-        clf       = res.get("clf")       or clf
+        clf = res.get("clf") or clf
         reg_short = res.get("reg_short") or reg_short
-        reg_long  = res.get("reg_long")  or reg_long
-        features  = res.get("features")  or features
-        meta      = res.get("meta")      or meta
+        reg_long = res.get("reg_long") or reg_long
+        features = res.get("features") or features
+        meta = res.get("meta") or meta
         LONG_THR_DEFAULT = res.get("LONG_THR_DEFAULT", LONG_THR_DEFAULT)
+
+
+# Root: δείχνει αν τα μοντέλα είναι φορτωμένα
+@app.get("/")
+def root() -> dict:
+    try:
+        _ensure_models_loaded()
+        model_ok = bool(clf and reg_short and reg_long)
+        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": model_ok}
+    except Exception as e:
+        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": False, "error": str(e)}
+
 
 # ---------- Build X ----------
 def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
@@ -201,7 +243,8 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
 
     # Ensure all training features exist & order
     feat_list = list(features.get("features", []))
-    cat_list  = set(features.get("categorical", []))
+    cat_list = set(features.get("categorical", []))
+
     for c in feat_list:
         if c not in X.columns:
             X[c] = np.nan
@@ -245,46 +288,69 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
 
     return X
 
+
 @app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
+    """
+    Query param:
+      - tau: DAYS threshold για risk_flag (π.χ. 720)
+
+    Model internals:
+      - tau_prob: probability threshold (meta["tau"]) για routing short vs long
+      - p_long:  probability from stage-1 classifier
+    """
     import math
     try:
         _ensure_models_loaded()
         if not (clf and reg_short and reg_long):
             raise HTTPException(status_code=503, detail="Models not loaded")
 
-# --- interpret query param tau as DAYS threshold (risk threshold) ---
-DEFAULT_TAU_DAYS = float(LONG_THR_DEFAULT)  # 720 days
-try:
-    tau_days = float(tau) if tau is not None else DEFAULT_TAU_DAYS
-except Exception:
-    tau_days = DEFAULT_TAU_DAYS
+        # 1) tau_days: threshold σε ημέρες (UI param)
+        DEFAULT_TAU_DAYS = float(LONG_THR_DEFAULT)
+        try:
+            tau_days = float(tau) if tau is not None else DEFAULT_TAU_DAYS
+        except Exception:
+            tau_days = DEFAULT_TAU_DAYS
 
-# --- routing threshold is PROBABILITY (saved from training) ---
-tau_prob = float(meta.get("tau", 0.5))  # classifier prob threshold
+        # 2) tau_prob: threshold σε probability (από training)
+        tau_prob = float(meta.get("tau", 0.5))
 
-# --- Predict ---
-p       = float(clf.predict(X)[0])
-y_short = float(reg_short.predict(X)[0])
-y_long  = float(reg_long.predict(X)[0])
+        # 3) build X
+        X = _build_dataframe(req)
 
-if p is None or not math.isfinite(p):
-    p = 0.0
+        # 4) align columns/order for each booster
+        X = _align_to_booster(X, clf)
+        X = _align_to_booster(X, reg_short)
+        X = _align_to_booster(X, reg_long)
 
-# 2-stage routing uses probability threshold
-yhat = float(_combine_hard(p, y_short, y_long, tau_prob))
+        # 5) predict components
+        p = float(clf.predict(X)[0])
+        y_short = float(reg_short.predict(X)[0])
+        y_long = float(reg_long.predict(X)[0])
 
-# apply year bump (as before)
-yhat = _apply_year_bump(yhat, getattr(req, "tender_year", None))
+        if p is None or not math.isfinite(p):
+            p = 0.0
 
-# risk flag uses DAYS threshold
-risk_flag_point = (yhat >= tau_days)
+        # 6) combine (routing based on probability threshold)
+        yhat = float(_combine_hard(p, y_short, y_long, tau_prob))
 
-return PredictResponse(
-    predicted_days=yhat,
-    risk_flag=bool(risk_flag_point),
-    model_used="lgbm_2stage",
-    tau=float(tau_days),   # εδώ τ = days, όπως το UI
-)
+        # 7) apply year-aware bump (αν υπάρχει)
+        yhat = _apply_year_bump(yhat, getattr(req, "tender_year", None))
+
+        stage_used = "long_reg" if (p >= tau_prob) else "short_reg"
+        risk_flag_point = (yhat >= tau_days)
+
+        return PredictResponse(
+            predicted_days=float(yhat),
+            risk_flag=bool(risk_flag_point),
+            model_used="lgbm_2stage",
+            tau_days=float(tau_days),
+            p_long=float(p),
+            tau_prob=float(tau_prob),
+            stage_used=str(stage_used),
+            pred_short=float(y_short),
+            pred_long=float(y_long),
+        )
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

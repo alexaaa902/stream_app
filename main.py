@@ -253,66 +253,38 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
         if not (clf and reg_short and reg_long):
             raise HTTPException(status_code=503, detail="Models not loaded")
 
-        # --- ensure numeric tau ---
-        DEFAULT_TAU = LONG_THR_DEFAULT  # ή 720
-        try:
-            tau = float(tau) if tau is not None else DEFAULT_TAU
-        except Exception:
-            tau = DEFAULT_TAU
+# --- interpret query param tau as DAYS threshold (risk threshold) ---
+DEFAULT_TAU_DAYS = float(LONG_THR_DEFAULT)  # 720 days
+try:
+    tau_days = float(tau) if tau is not None else DEFAULT_TAU_DAYS
+except Exception:
+    tau_days = DEFAULT_TAU_DAYS
 
-        # --- build dataframe as usual ---
-        X = _build_dataframe(req)
+# --- routing threshold is PROBABILITY (saved from training) ---
+tau_prob = float(meta.get("tau", 0.5))  # classifier prob threshold
 
-        # --- ensure log features exist (αν λείπουν) ---
-        if "tender_estimatedPrice_EUR_log" not in X.columns and "tender_estimatedPrice_EUR" in X.columns:
-            X["tender_estimatedPrice_EUR_log"] = X["tender_estimatedPrice_EUR"].apply(
-                lambda v: math.log(v) if v and v > 0 else 0
-            )
-        if "lot_bidsCount_log" not in X.columns and "lot_bidsCount" in X.columns:
-            X["lot_bidsCount_log"] = X["lot_bidsCount"].apply(
-                lambda v: math.log(v) if v and v > 0 else 0
-            )
+# --- Predict ---
+p       = float(clf.predict(X)[0])
+y_short = float(reg_short.predict(X)[0])
+y_long  = float(reg_long.predict(X)[0])
 
-        # --- Align with boosters (order/shape) ---
-        X = _align_to_booster(X, clf)
-        X = _align_to_booster(X, reg_short)
-        X = _align_to_booster(X, reg_long)
+if p is None or not math.isfinite(p):
+    p = 0.0
 
-        # --- DEBUG (safe) ---
-        try:
-            print("\nDEBUG_X (values):\n", X.T)
-            print("DEBUG dtypes:", {c: str(t) for c, t in X.dtypes.items()})
-            print("DEBUG NaNs per col:", X.isna().sum().to_dict())
-            fn = clf.feature_name()
-            print("DEBUG Booster feature order (first 25):", fn[:25], "...")
-        except Exception:
-            pass
+# 2-stage routing uses probability threshold
+yhat = float(_combine_hard(p, y_short, y_long, tau_prob))
 
-        # --- Predict ---
-        p       = float(clf.predict(X)[0])
-        y_short = float(reg_short.predict(X)[0])
-        y_long  = float(reg_long.predict(X)[0])
+# apply year bump (as before)
+yhat = _apply_year_bump(yhat, getattr(req, "tender_year", None))
 
-        # --- sanitize probability ---
-        if p is None or not math.isfinite(p):
-            p = 0.0
+# risk flag uses DAYS threshold
+risk_flag_point = (yhat >= tau_days)
 
-        chosen_tau = float(meta.get("tau", DEFAULT_TAU)) if tau is None else float(tau)
-        yhat = float(_combine_hard(p, y_short, y_long, chosen_tau))
-        yhat = _apply_year_bump(yhat, getattr(req, "tender_year", None))
-
-        # --- flags ---
-        risk_flag_point = yhat >= chosen_tau
-        prob_cut = 0.5
-        risk_flag_prob = p >= prob_cut
-
-        # --- Return PredictResponse (όπως πριν, απλώς πιο πλήρες) ---
-        return PredictResponse(
+return PredictResponse(
     predicted_days=yhat,
-    risk_flag=bool(yhat >= chosen_tau),   # σημειακό flag: predicted_days vs τ
+    risk_flag=bool(risk_flag_point),
     model_used="lgbm_2stage",
-    tau=chosen_tau,
+    tau=float(tau_days),   # εδώ τ = days, όπως το UI
 )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -225,7 +225,7 @@ def _ensure_models_loaded():
 
 
 @app.get("/")
-def root() -> dict:
+return {"name": "ProcureSight API", "build": "BUILD_2025_12_21_A", "model_loaded": True}
     try:
         _ensure_models_loaded()
         model_ok = bool(clf and reg_short and reg_long)
@@ -363,6 +363,7 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
             stage_used=str(stage_used),
             pred_short=float(y_short),
             pred_long=float(y_long),
+            BUILD": "BUILD_2025_12_21_A
         )
 
     except HTTPException:

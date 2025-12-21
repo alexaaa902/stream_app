@@ -70,7 +70,18 @@ app = FastAPI(title="ProcureSight API", version="1.0")
 @app.get("/health")
 def health_check() -> dict:
     return {"ok": True}
+    
+from fastapi import FastAPI
+import os
 
+app = FastAPI()
+
+@app.get("/where")
+def where():
+    return {
+        "file": __file__,
+        "cwd": os.getcwd(),
+    }
 
 # ---------- Globals / defaults ----------
 features: Dict[str, Any] = {}

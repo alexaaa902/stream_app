@@ -77,6 +77,12 @@ def where():
         "file": __file__,
         "cwd": os.getcwd(),
     }
+@app.get("/__whoami")
+def whoami():
+    return {
+        "file": __file__,
+        "msg": "THIS_IS_THE_REAL_MAIN"
+    }
 
 # ---------- Globals / defaults ----------
 features: Dict[str, Any] = {}

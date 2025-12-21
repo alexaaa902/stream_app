@@ -302,7 +302,7 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
     return X
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post("/predict")
 def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
     """
     Query param:

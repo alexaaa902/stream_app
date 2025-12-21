@@ -236,9 +236,10 @@ def root():
     try:
         _ensure_models_loaded()
         model_ok = bool(clf and reg_short and reg_long)
-        return {"name": "ProcureSight API", "version": "1.0", "build": "BUILD_2025_12_21_A", "model_loaded": model_ok}
+        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": model_ok}
     except Exception as e:
-        return {"name": "ProcureSight API", "version": "1.0", "build": "BUILD_2025_12_21_A", "model_loaded": False, "error": str(e)}
+        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": False, "error": str(e)}
+
 
 
 # ---------- Build X ----------

@@ -1129,7 +1129,7 @@ elif looks_agg:
     yg = np.r_[0.0, df_lorenz["Cum Share Risk"].values]
 
     # --- Gini (area between equality line and Lorenz curve) ---
-    auc = np.trapz(yg, xg)
+    auc = np.trapezoid(yg, xg)
     gini = float(np.clip(1.0 - 2.0 * auc, 0.0, 1.0))
 
     # labels πρέπει να αντιστοιχούν στη ΣΕΙΡΑ του df_lorenz

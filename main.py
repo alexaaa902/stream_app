@@ -61,6 +61,9 @@ except Exception:
         pred_short: float
         pred_long: float
 
+@app.get("/version")
+def version():
+    return {"build": "TEST_123"}
 
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")

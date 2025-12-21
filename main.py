@@ -61,17 +61,6 @@ except Exception:
         pred_short: float
         pred_long: float
 
-import os
-
-@app.get("/__fingerprint")
-def __fingerprint():
-    return {
-        "file": __file__,
-        "cwd": os.getcwd(),
-        "commit": os.getenv("RENDER_GIT_COMMIT"),
-        "service": os.getenv("RENDER_SERVICE_NAME"),
-    }
-"TEST_123"}
 
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")

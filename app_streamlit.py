@@ -1409,8 +1409,18 @@ with t1:
 
         try:
             res = api_predict(payload, tau=float(tau_val))
+
             pred = float(res.get("predicted_days", float("nan")))
-            flag = bool(res.get("risk_flag", pred >= float(tau_val)))
+            # προτίμησε risk_flag από API, αλλιώς fallback
+            flag = bool(res.get("risk_flag")) if "risk_flag" in res else bool(pred >= float(tau_val))
+
+            # --- NEW: internals (αν τα στέλνει το API) ---
+            p_long = res.get("p_long", None)
+            stage_used = res.get("stage_used", None)
+            pred_short = res.get("pred_short", None)
+            pred_long_val = res.get("pred_long", None)
+            tau_prob = res.get("tau_prob", None)
+            tau_days_api = res.get("tau_days", None)
 
             st.markdown('<div class="sticky-toolbar">', unsafe_allow_html=True)
             chip(f"Top-K: {int(st.session_state.get('topk', TOP_K_DEFAULT))}")
@@ -1418,6 +1428,7 @@ with t1:
             chip(f"Min count: {int(st.session_state.get('mincnt', MIN_COUNT_DEFAULT))}")
             st.markdown("</div>", unsafe_allow_html=True)
 
+            # --- Main KPIs ---
             k1, k2, k3 = st.columns([1, 1, 1])
             with k1:
                 kpi_card("Predicted days", f"{pred:,.0f}", f"τ = {float(tau_val):.0f} days")
@@ -1426,12 +1437,36 @@ with t1:
             with k3:
                 kpi_card("Model", res.get("model_used", "—"), f"API: {api_base_in}")
 
+            # --- NEW: Internals row (π.χ. για να ξεκλειδώσεις 358 vs 680) ---
+            k4, k5, k6, k7 = st.columns([1, 1, 1, 1])
+            with k4:
+                subtitle = f"τ_prob = {float(tau_prob):.4f}" if tau_prob is not None else "τ_prob = —"
+                kpi_card("p_long", f"{float(p_long):.4f}" if p_long is not None else "—", subtitle)
+            with k5:
+                kpi_card("stage_used", str(stage_used) if stage_used is not None else "—", "routing")
+            with k6:
+                kpi_card("pred_short", f"{float(pred_short):,.0f}" if pred_short is not None else "—", "short reg")
+            with k7:
+                kpi_card("pred_long", f"{float(pred_long_val):,.0f}" if pred_long_val is not None else "—", "long reg")
+
+            # --- Optional: show what τ the API thinks it used for risk ---
+            if tau_days_api is not None and float(tau_days_api) != float(tau_val):
+                st.warning(f"API returned tau_days={float(tau_days_api):.0f} (UI τ={float(tau_val):.0f}). Check for mismatch.")
+
             with st.expander("Raw response"):
                 st.json(res)
+
             with st.expander("Sanity check"):
+                extra = []
+                if (p_long is not None) and (tau_prob is not None):
+                    extra.append(f"p_long={float(p_long):.4f} vs τ_prob={float(tau_prob):.4f} → stage={stage_used}")
+                if (pred_short is not None) and (pred_long_val is not None):
+                    extra.append(f"pred_short={float(pred_short):.1f}, pred_long={float(pred_long_val):.1f}")
                 st.info(
-                    f"predicted_days={pred:.1f} vs τ={float(tau_val):.0f} → risk_flag={flag}"
+                    f"predicted_days={pred:.1f} vs τ_days={float(tau_val):.0f} → risk_flag={flag}"
+                    + (("\n\n" + "\n".join(extra)) if extra else "")
                 )
+
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
@@ -1442,17 +1477,18 @@ with t2:
     if not can_batch:
         banner(
             "This tab works only with raw tender records/CSVs (no model outputs, e.g. predicted_days, "
-    "risk_flag, or aggregated summaries, e.g. Risk% and Count per group).<br><br>"
+            "risk_flag, or aggregated summaries, e.g. Risk% and Count per group).<br><br>"
             "Open a procurement file with the original inputs, e.g. one row per tender, "
-    "containing at least:<br>""<b>tender_country</b>, <b>tender_mainCpv</b>, <b>tender_year</b> "
-    "(optionally also procedure type, supply type, estimated price, bids count).",
-    "warn",
+            "containing at least:<br>"
+            "<b>tender_country</b>, <b>tender_mainCpv</b>, <b>tender_year</b> "
+            "(optionally also procedure type, supply type, estimated price, bids count).",
+            "warn",
         )
     else:
         st.caption(
-    "Generate **multiple predictions at once** using the CSV file you uploaded. "
-    "Each row in your file will receive a model prediction — ideal for testing many tenders together."
-)
+            "Generate **multiple predictions at once** using the CSV file you uploaded. "
+            "Each row in your file will receive a model prediction — ideal for testing many tenders together."
+        )
         col_a, col_b = st.columns([1, 1])
         with col_a:
             tau_batch = st.number_input("Override τ (batch, days)", 100, 1200, 720, step=10)
@@ -1472,9 +1508,15 @@ with t2:
             for _, r in df_src.iterrows():
                 d = {c: r[c] for c in feat_cols if c in df_src.columns}
                 if "tender_estimatedPrice_EUR" in d and "tender_estimatedPrice_EUR_log" in feat_cols:
-                    d.setdefault("tender_estimatedPrice_EUR_log", float(np.log1p(d.get("tender_estimatedPrice_EUR", 0) or 0)))
+                    d.setdefault(
+                        "tender_estimatedPrice_EUR_log",
+                        float(np.log1p(d.get("tender_estimatedPrice_EUR", 0) or 0)),
+                    )
                 if "lot_bidsCount" in d and "lot_bidsCount_log" in feat_cols:
-                    d.setdefault("lot_bidsCount_log", float(np.log1p(d.get("lot_bidsCount", 0) or 0)))
+                    d.setdefault(
+                        "lot_bidsCount_log",
+                        float(np.log1p(d.get("lot_bidsCount", 0) or 0)),
+                    )
                 if "tender_country" in d and pd.notna(d["tender_country"]):
                     d["tender_country"] = str(d["tender_country"]).upper().strip()
                 if "tender_mainCpv" in d and pd.notna(d["tender_mainCpv"]):
@@ -1515,7 +1557,15 @@ with t2:
                         if pd.notna(s.max()) and s.max() <= 1.5:
                             s = s * 100.0
                         prev["Risk %"] = s.map(lambda v: f"{v:.2f}%")
-                        prev.drop(columns=[c for c in ["Risk%", "RiskPct", "risk_pct", "risk%"] if c in prev.columns], inplace=True, errors="ignore")
+                        prev.drop(
+                            columns=[
+                                c
+                                for c in ["Risk%", "RiskPct", "risk_pct", "risk%"]
+                                if c in prev.columns
+                            ],
+                            inplace=True,
+                            errors="ignore",
+                        )
                         break
 
                 st.caption(f"Rows to predict: {len(df_in):,}")
@@ -1531,7 +1581,9 @@ with t2:
                     st.subheader("Quick rankings on batch predictions")
                     df_rank_src = derive_labels(df_out.copy())
                     tau_used = float(tau_batch) if tau_batch else 720.0
-                    df_rank_src["risk_flag"] = pd.to_numeric(df_rank_src["predicted_days"], errors="coerce") >= tau_used
+                    df_rank_src["risk_flag"] = pd.to_numeric(
+                        df_rank_src["predicted_days"], errors="coerce"
+                    ) >= tau_used
 
                     def _all_unknown(df: pd.DataFrame, cols) -> bool:
                         if cols is None:
@@ -1546,7 +1598,8 @@ with t2:
                             sub = sub.to_frame()
                         norm = sub.astype(str).apply(lambda s: s.str.strip().str.upper())
                         return norm.apply(
-                            lambda s: (s.nunique(dropna=False) == 1) and (s.iloc[0] in ("UNKNOWN", "NAN", "NONE", "", "NA")),
+                            lambda s: (s.nunique(dropna=False) == 1)
+                            and (s.iloc[0] in ("UNKNOWN", "NAN", "NONE", "", "NA")),
                             axis=0,
                         ).all()
 
@@ -1558,20 +1611,26 @@ with t2:
                             return
                         out = (
                             tbl.groupby(by_cols, dropna=False)
-                               .agg(
-                                   RiskPct=("risk_flag", lambda s: float(100.0 * np.nanmean(s.astype(float)))),
-                                   Count=("risk_flag", "size"),
-                               )
-                               .sort_values(["RiskPct", "Count"], ascending=[False, False])
-                               .reset_index()
+                            .agg(
+                                RiskPct=("risk_flag", lambda s: float(100.0 * np.nanmean(s.astype(float)))),
+                                Count=("risk_flag", "size"),
+                            )
+                            .sort_values(["RiskPct", "Count"], ascending=[False, False])
+                            .reset_index()
                         )
                         if out.empty or _all_unknown(out, [c for c in out.columns if c not in ("RiskPct", "Count")]):
-                            st.info("No rankings available: the selected CSV lacks raw columns (country/procedure/CPV) or they are all Unknown.")
+                            st.info(
+                                "No rankings available: the selected CSV lacks raw columns (country/procedure/CPV) or they are all Unknown."
+                            )
                             return
 
                         out_disp = out.copy()
                         out_disp["RiskPct"] = out_disp["RiskPct"].astype(float).map(lambda v: f"{v:.2f}%")
-                        rename_map = {c: FRIENDLY_COLS.get(c, FRIENDLY_COLS.get(str(c).lower(), c)) for c in out_disp.columns if c not in ("RiskPct", "Count")}
+                        rename_map = {
+                            c: FRIENDLY_COLS.get(c, FRIENDLY_COLS.get(str(c).lower(), c))
+                            for c in out_disp.columns
+                            if c not in ("RiskPct", "Count")
+                        }
                         out_disp = out_disp.rename(columns=rename_map).rename(columns={"RiskPct": "Risk %"})
                         st.dataframe(out_disp.head(50), use_container_width=True)
 
@@ -1585,19 +1644,31 @@ with t2:
                             x = sub.astype(str).agg(" — ".join, axis=1)
 
                         fig = go.Figure()
-                        fig.add_trace(go.Bar(
-                            x=x, y=out["RiskPct"], name="Risk%", yaxis="y1",
-                            hovertemplate="<b>%{x}</b><br>Risk%: %{y:.2f}%<extra></extra>",
-                        ))
-                        fig.add_trace(go.Bar(
-                            x=x, y=(out["Count"] / 1000.0), name="Count (K)", yaxis="y2", opacity=0.60,
-                            hovertemplate="<b>%{x}</b><br>Count: %{y:,.1f}K<extra></extra>",
-                        ))
+                        fig.add_trace(
+                            go.Bar(
+                                x=x,
+                                y=out["RiskPct"],
+                                name="Risk%",
+                                yaxis="y1",
+                                hovertemplate="<b>%{x}</b><br>Risk%: %{y:.2f}%<extra></extra>",
+                            )
+                        )
+                        fig.add_trace(
+                            go.Bar(
+                                x=x,
+                                y=(out["Count"] / 1000.0),
+                                name="Count (K)",
+                                yaxis="y2",
+                                opacity=0.60,
+                                hovertemplate="<b>%{x}</b><br>Count: %{y:,.1f}K<extra></extra>",
+                            )
+                        )
                         fig.update_layout(
                             xaxis_title="Group",
                             yaxis=dict(title="Risk %", range=[0, 100]),
                             yaxis2=dict(title="Count (K)", overlaying="y", side="right"),
-                            barmode="group", margin=dict(t=50),
+                            barmode="group",
+                            margin=dict(t=50),
                             legend=dict(orientation="h", y=1.02, x=1, xanchor="right"),
                         )
                         st.plotly_chart(fig, use_container_width=True, key=f"batch_rank_{_slug(title)}")
@@ -1609,19 +1680,27 @@ with t2:
                     base_series = pd.Series([np.nan] * len(df_rank_src2), index=df_rank_src2.index)
                     df_rank_src2["cpv_div2"] = pd.to_numeric(df_rank_src2.get("cpv_div2", base_series), errors="coerce")
                     if df_rank_src2["cpv_div2"].isna().all():
-                        s_cpv = df_rank_src2["tender_mainCpv"].astype(str) if "tender_mainCpv" in df_rank_src2.columns else pd.Series([""] * len(df_rank_src2), index=df_rank_src2.index)
+                        s_cpv = (
+                            df_rank_src2["tender_mainCpv"].astype(str)
+                            if "tender_mainCpv" in df_rank_src2.columns
+                            else pd.Series([""] * len(df_rank_src2), index=df_rank_src2.index)
+                        )
                         df_rank_src2["cpv_div2"] = pd.to_numeric(s_cpv.str.slice(0, 2), errors="coerce")
                     _rank_and_plot(df_rank_src2, ["cpv_div2"], "By CPV (division-2)")
                 else:
-                    st.info("No rankings available: predictions were not produced for this file (missing 'predicted_days').")
+                    st.info(
+                        "No rankings available: predictions were not produced for this file (missing 'predicted_days')."
+                    )
 
                 st.markdown("### Predictions (joined with your batch file)")
                 st.caption(
-    "Your original data is shown together with the new predictions — ready to review or download."
-)
+                    "Your original data is shown together with the new predictions — ready to review or download."
+                )
                 df_show = df_out.copy()
                 if "predicted_days" in df_show.columns:
-                    df_show["Predicted days"] = pd.to_numeric(df_show["predicted_days"], errors="coerce").round().astype("Int64")
+                    df_show["Predicted days"] = (
+                        pd.to_numeric(df_show["predicted_days"], errors="coerce").round().astype("Int64")
+                    )
                 if "risk_flag" in df_show.columns:
                     df_show["High-risk?"] = df_show["risk_flag"].map({True: "Yes", False: "No"})
                 if "RiskPct" in df_show.columns:
@@ -1648,15 +1727,30 @@ with t2:
                         df_show.drop(columns=[c], inplace=True, errors="ignore")
                 df_show = df_show.loc[:, ~pd.Index(df_show.columns).duplicated()].copy().reset_index(drop=True)
 
-                front = [c for c in [
-                    "Procedure", "Procedure (raw)", "Country", "Country code", "CPV Group", "CPV Division",
-                    "Risk %", "Predicted days", "High-risk?", "model_used", "tau"
-                ] if c in df_show.columns]
+                front = [
+                    c
+                    for c in [
+                        "Procedure",
+                        "Procedure (raw)",
+                        "Country",
+                        "Country code",
+                        "CPV Group",
+                        "CPV Division",
+                        "Risk %",
+                        "Predicted days",
+                        "High-risk?",
+                        "model_used",
+                        "tau",
+                    ]
+                    if c in df_show.columns
+                ]
                 df_show = df_show[front + [c for c in df_show.columns if c not in front]]
 
                 def _hl(val):
-                    if val == "Yes": return "background-color:#ffb3b3; font-weight:700; text-align:center;"
-                    if val == "No":  return "background-color:#b3ffcc; font-weight:700; text-align:center;"
+                    if val == "Yes":
+                        return "background-color:#ffb3b3; font-weight:700; text-align:center;"
+                    if val == "No":
+                        return "background-color:#b3ffcc; font-weight:700; text-align:center;"
                     return ""
 
                 try:
@@ -1664,7 +1758,10 @@ with t2:
                     if "High-risk?" in df_show.columns:
                         styler = styler.applymap(_hl, subset=["High-risk?"])
                     if "Predicted days" in df_show.columns:
-                        styler = styler.set_properties(subset=["Predicted days"], **{"background-color":"#fff8b3","font-weight":"bold"})
+                        styler = styler.set_properties(
+                            subset=["Predicted days"],
+                            **{"background-color": "#fff8b3", "font-weight": "bold"},
+                        )
                     st.dataframe(styler, use_container_width=True)
                 except Exception:
                     st.dataframe(df_show, use_container_width=True)
@@ -1687,7 +1784,9 @@ with t2:
                         use_container_width=True,
                     )
             except requests.HTTPError as e:
-                st.error(f"API error: {e.status_code if hasattr(e, 'status_code') else ''} — {e.response.text if hasattr(e, 'response') else e}")
+                st.error(
+                    f"API error: {e.status_code if hasattr(e, 'status_code') else ''} — {e.response.text if hasattr(e, 'response') else e}"
+                )
             except Exception as e:
                 st.error(f"Failed to run batch: {e}")
 

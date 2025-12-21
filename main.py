@@ -1,8 +1,6 @@
 %%writefile main.py
 from __future__ import annotations
-# app.py
-from main import app
-
+from pydantic import ConfigDict
 
 # ---------- Imports ----------
 from typing import Optional, Dict, Any
@@ -71,10 +69,7 @@ app = FastAPI(title="ProcureSight API", version="1.0")
 def health_check() -> dict:
     return {"ok": True}
     
-from fastapi import FastAPI
 import os
-
-app = FastAPI()
 
 @app.get("/where")
 def where():

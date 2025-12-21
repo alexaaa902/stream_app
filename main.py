@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Optional, Dict, Any
 from pathlib import Path
 import json
+import math
+
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
@@ -38,7 +40,11 @@ except Exception:
         predicted_days: float
         risk_flag: bool
         model_used: str
+
+        # UI risk threshold (days)
         tau_days: float
+
+        # internals for debugging / transparency
         p_long: float
         tau_prob: float
         stage_used: str
@@ -49,10 +55,10 @@ except Exception:
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")
 
-# Health check: ελαφρύ, για Render/monitors
 @app.get("/health")
 def health_check() -> dict:
     return {"ok": True}
+
 
 # ---------- Globals / defaults ----------
 features: Dict[str, Any] = {}
@@ -80,32 +86,36 @@ def _derive_cpv_parts(s: pd.Series):
     return _safe_num(s.str[:2]), _safe_num(s.str[:3])
 
 
-def _combine_hard(p, y_short, y_long, tau_prob):
+def _combine_hard(p_long: float, y_short: float, y_long: float, tau_prob: float) -> float:
     """
     2-stage HARD:
-      - αν p_long >= tau_prob => long reg
-      - αλλιώς => short reg
+      - if p_long >= tau_prob => long reg
+      - else => short reg
     clamp to [1,1800]
     """
     CAP_MIN, CAP_MAX = 1.0, 1800.0
-    use_long = (np.asarray(p, float) >= float(tau_prob))
-    out = np.where(use_long, np.asarray(y_long, float), np.asarray(y_short, float))
-    return np.clip(out, CAP_MIN, CAP_MAX)
+    use_long = float(p_long) >= float(tau_prob)
+    out = float(y_long) if use_long else float(y_short)
+    return float(np.clip(out, CAP_MIN, CAP_MAX))
 
 
 def _year_bump_from_meta(year: Optional[int]) -> float:
     """
-    Διαβάζει poly coeffs από meta["year_bump_info"]["poly_coeffs"] (σταθερός όρος πρώτος),
-    και επιστρέφει per-year bump (0..max_b).
+    Reads poly coeffs from meta["year_bump_info"]["poly_coeffs"].
+    In your training script you wrote:
+      "poly_coeffs": [float(c) for c in coeffs[::-1]]
+    i.e. constant term first.
+    So we evaluate: a0 + a1*y + a2*y^2 ...
     """
     if year is None or not meta:
         return 0.0
+
     bump = meta.get("bump", {}) or {}
     if (bump.get("mode") != "year-aware") or (meta.get("year_bump_info") is None):
         return 0.0
 
-    info = meta["year_bump_info"] or {}
-    coeffs = info.get("poly_coeffs", [])
+    info = meta.get("year_bump_info") or {}
+    coeffs = info.get("poly_coeffs", []) or []
     max_b = float(info.get("max_b", bump.get("year_bump_max", 5.0)))
 
     if not coeffs:
@@ -120,13 +130,13 @@ def _year_bump_from_meta(year: Optional[int]) -> float:
 
 
 def _apply_year_bump(yhat: float, tender_year: Optional[int]) -> float:
-    """One-sided triangular bump around ~720 using meta poly (όπως στο training)."""
+    """One-sided triangular bump around ~720 using meta poly (same logic as training)."""
     b = _year_bump_from_meta(tender_year)
 
     LOW, HIGH, CENTER, SNAP_FROM, SNAP_TO = 670.0, 720.0, 720.0, 715.0, 720.0
     yh = float(yhat)
 
-    # bump μόνο στο παράθυρο [LOW, HIGH)
+    # bump only in [LOW, HIGH)
     if yh < LOW or yh >= HIGH or b <= 0:
         return yh
 
@@ -152,13 +162,14 @@ def _align_to_booster(X: pd.DataFrame, booster) -> pd.DataFrame:
         exp = None
 
     if not exp or any((name is None) or (name == "") for name in exp):
-        return X  # nothing to do
+        return X
 
+    # add missing
     missing = [c for c in exp if c not in X.columns]
     for c in missing:
         X[c] = np.nan
 
-    # drop extras by selecting only exp
+    # enforce order + drop extras
     return X[exp]
 
 
@@ -205,16 +216,14 @@ def _ensure_models_loaded():
     if clf is not None and reg_short is not None and reg_long is not None and features:
         return
     res = _load_artifacts()
-    if isinstance(res, dict):
-        clf = res.get("clf") or clf
-        reg_short = res.get("reg_short") or reg_short
-        reg_long = res.get("reg_long") or reg_long
-        features = res.get("features") or features
-        meta = res.get("meta") or meta
-        LONG_THR_DEFAULT = res.get("LONG_THR_DEFAULT", LONG_THR_DEFAULT)
+    clf = res.get("clf") or clf
+    reg_short = res.get("reg_short") or reg_short
+    reg_long = res.get("reg_long") or reg_long
+    features = res.get("features") or features
+    meta = res.get("meta") or meta
+    LONG_THR_DEFAULT = res.get("LONG_THR_DEFAULT", LONG_THR_DEFAULT)
 
 
-# Root: δείχνει αν τα μοντέλα είναι φορτωμένα
 @app.get("/")
 def root() -> dict:
     try:
@@ -227,21 +236,25 @@ def root() -> dict:
 
 # ---------- Build X ----------
 def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
+    """
+    Build a 1-row dataframe matching training features.json
+    and compute derived CPV parts + log1p transforms.
+    """
     d = req.model_dump()
 
-    # Normalize
+    # Normalize base fields
     d["tender_country"] = (d.get("tender_country") or "").upper().strip()
     if d.get("tender_mainCpv") is not None:
         d["tender_mainCpv"] = str(d["tender_mainCpv"]).strip()
 
     X = pd.DataFrame([d])
 
-    # CPV derived features (numeric)
+    # Derived CPV parts
     if "tender_mainCpv" in X.columns and X["tender_mainCpv"].notna().any():
         cpv_div2, cpv_grp3 = _derive_cpv_parts(X["tender_mainCpv"])
         X["cpv_div2"], X["cpv_grp3"] = cpv_div2, cpv_grp3
 
-    # Ensure all training features exist & order
+    # Ensure all training features exist & order (features.json)
     feat_list = list(features.get("features", []))
     cat_list = set(features.get("categorical", []))
 
@@ -251,7 +264,7 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
     if feat_list:
         X = X[feat_list]
 
-    # Auto-compute *_log fields (training used ln(1+x))
+    # Auto-compute *_log fields (training used log1p)
     if "tender_estimatedPrice_EUR" in X.columns and "tender_estimatedPrice_EUR_log" in X.columns:
         base = pd.to_numeric(X["tender_estimatedPrice_EUR"], errors="coerce")
         approx_ln = np.log1p(base)
@@ -266,11 +279,11 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
         need_fix = given.isna() | ~np.isfinite(given) | (np.abs(given - approx_ln) > 0.5)
         X.loc[need_fix, "lot_bidsCount_log"] = approx_ln
 
-    # Target safeguard (αν υπάρχει μέσα στα features από λάθος)
+    # Safeguard if target_duration accidentally is in features list
     if "target_duration" in X.columns and X["target_duration"].isna().any():
         X["target_duration"] = 700.0
 
-    # Dtypes policy (respect features.json)
+    # Dtypes policy (respect categorical list)
     for c in X.columns:
         if c in cat_list:
             X[c] = X[c].astype("string").str.strip().astype("category")
@@ -278,7 +291,7 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
             if not pd.api.types.is_numeric_dtype(X[c]) and not pd.api.types.is_bool_dtype(X[c]):
                 X[c] = pd.to_numeric(X[c], errors="coerce")
 
-    # guard: if any category not in cat_list → back to numeric
+    # If something became category but shouldn't, coerce to numeric
     for c in X.select_dtypes(include=["category"]).columns:
         if c not in cat_list:
             X[c] = pd.to_numeric(X[c].astype("string"), errors="coerce")
@@ -293,50 +306,50 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
 def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
     """
     Query param:
-      - tau: DAYS threshold για risk_flag (π.χ. 720)
+      - tau: DAYS threshold for risk_flag (e.g. 720)
 
     Model internals:
-      - tau_prob: probability threshold (meta["tau"]) για routing short vs long
+      - tau_prob: probability threshold (meta["tau"]) for routing short vs long
       - p_long:  probability from stage-1 classifier
     """
-    import math
     try:
         _ensure_models_loaded()
         if not (clf and reg_short and reg_long):
             raise HTTPException(status_code=503, detail="Models not loaded")
 
-        # 1) tau_days: threshold σε ημέρες (UI param)
+        # 1) tau_days: risk threshold in DAYS (UI param)
         DEFAULT_TAU_DAYS = float(LONG_THR_DEFAULT)
         try:
             tau_days = float(tau) if tau is not None else DEFAULT_TAU_DAYS
         except Exception:
             tau_days = DEFAULT_TAU_DAYS
 
-        # 2) tau_prob: threshold σε probability (από training)
+        # 2) tau_prob: routing threshold in PROBABILITY (from training artifacts)
         tau_prob = float(meta.get("tau", 0.5))
 
         # 3) build X
         X = _build_dataframe(req)
 
         # 4) align columns/order for each booster
-        X = _align_to_booster(X, clf)
-        X = _align_to_booster(X, reg_short)
-        X = _align_to_booster(X, reg_long)
+        Xc = _align_to_booster(X.copy(), clf)
+        Xs = _align_to_booster(X.copy(), reg_short)
+        Xl = _align_to_booster(X.copy(), reg_long)
 
         # 5) predict components
-        p = float(clf.predict(X)[0])
-        y_short = float(reg_short.predict(X)[0])
-        y_long = float(reg_long.predict(X)[0])
+        p = float(clf.predict(Xc)[0])
+        y_short = float(reg_short.predict(Xs)[0])
+        y_long = float(reg_long.predict(Xl)[0])
 
         if p is None or not math.isfinite(p):
             p = 0.0
 
         # 6) combine (routing based on probability threshold)
-        yhat = float(_combine_hard(p, y_short, y_long, tau_prob))
+        yhat = _combine_hard(p, y_short, y_long, tau_prob)
 
-        # 7) apply year-aware bump (αν υπάρχει)
-        yhat = _apply_year_bump(yhat, getattr(req, "tender_year", None))
+        # 7) apply year-aware bump (if enabled in meta)
+        yhat = _apply_year_bump(yhat, req.tender_year)
 
+        # 8) outputs
         stage_used = "long_reg" if (p >= tau_prob) else "short_reg"
         risk_flag_point = (yhat >= tau_days)
 
@@ -352,5 +365,7 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
             pred_long=float(y_long),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

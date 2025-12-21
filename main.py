@@ -1,5 +1,8 @@
 %%writefile main.py
 from __future__ import annotations
+# app.py
+from main import app
+
 
 # ---------- Imports ----------
 from typing import Optional, Dict, Any
@@ -37,6 +40,8 @@ except Exception:
         target_duration: Optional[float] = None
 
     class PredictResponse(BaseModel):
+        model_config = ConfigDict(protected_namespaces=())  # για να φύγει το warning με model_used
+        
         predicted_days: float
         risk_flag: bool
         model_used: str
@@ -47,7 +52,7 @@ except Exception:
         pred_short: float
         pred_long: float
         build: str
-
+        
         # UI risk threshold (days)
         tau_days: float
 

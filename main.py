@@ -40,6 +40,13 @@ except Exception:
         predicted_days: float
         risk_flag: bool
         model_used: str
+        tau_days: float
+        p_long: float
+        tau_prob: float
+        stage_used: str
+        pred_short: float
+        pred_long: float
+        build: str
 
         # UI risk threshold (days)
         tau_days: float
@@ -225,13 +232,13 @@ def _ensure_models_loaded():
 
 
 @app.get("/")
-return {"name": "ProcureSight API", "build": "BUILD_2025_12_21_A", "model_loaded": True}
+def root():
     try:
         _ensure_models_loaded()
         model_ok = bool(clf and reg_short and reg_long)
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": model_ok}
+        return {"name": "ProcureSight API", "version": "1.0", "build": "BUILD_2025_12_21_A", "model_loaded": model_ok}
     except Exception as e:
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": False, "error": str(e)}
+        return {"name": "ProcureSight API", "version": "1.0", "build": "BUILD_2025_12_21_A", "model_loaded": False, "error": str(e)}
 
 
 # ---------- Build X ----------
@@ -302,7 +309,7 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
     return X
 
 
-@app.post("/predict")
+@app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
     """
     Query param:
@@ -363,7 +370,7 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
             stage_used=str(stage_used),
             pred_short=float(y_short),
             pred_long=float(y_long),
-            BUILD": "BUILD_2025_12_21_A
+            build="BUILD_2025_12_21_A",
         )
 
     except HTTPException:

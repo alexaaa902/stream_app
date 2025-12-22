@@ -65,9 +65,20 @@ except Exception:
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")
 
+# Health check: ελαφρύ, για Render/monitors
 @app.get("/health")
 def health_check() -> dict:
     return {"ok": True}
+
+# Root: δείχνει αν τα μοντέλα είναι φορτωμένα
+@app.get("/")
+def root() -> dict:
+    try:
+        _ensure_models_loaded()
+        model_ok = bool(clf and reg_short and reg_long)
+        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": model_ok}
+    except Exception as e:
+        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": False, "error": str(e)}
     
 import os
 
@@ -240,17 +251,6 @@ def _ensure_models_loaded():
     features = res.get("features") or features
     meta = res.get("meta") or meta
     LONG_THR_DEFAULT = res.get("LONG_THR_DEFAULT", LONG_THR_DEFAULT)
-
-
-@app.get("/")
-def root():
-    try:
-        _ensure_models_loaded()
-        model_ok = bool(clf and reg_short and reg_long)
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": model_ok}
-    except Exception as e:
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": False, "error": str(e)}
-
 
 
 # ---------- Build X ----------

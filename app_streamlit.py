@@ -1437,18 +1437,6 @@ with t1:
             with k3:
                 kpi_card("Model", res.get("model_used", "—"), f"API: {api_base_in}")
 
-            # --- NEW: Internals row (π.χ. για να ξεκλειδώσεις 358 vs 680) ---
-            k4, k5, k6, k7 = st.columns([1, 1, 1, 1])
-            with k4:
-                subtitle = f"τ_prob = {float(tau_prob):.4f}" if tau_prob is not None else "τ_prob = —"
-                kpi_card("p_long", f"{float(p_long):.4f}" if p_long is not None else "—", subtitle)
-            with k5:
-                kpi_card("stage_used", str(stage_used) if stage_used is not None else "—", "routing")
-            with k6:
-                kpi_card("pred_short", f"{float(pred_short):,.0f}" if pred_short is not None else "—", "short reg")
-            with k7:
-                kpi_card("pred_long", f"{float(pred_long_val):,.0f}" if pred_long_val is not None else "—", "long reg")
-
             # --- Optional: show what τ the API thinks it used for risk ---
             if tau_days_api is not None and float(tau_days_api) != float(tau_val):
                 st.warning(f"API returned tau_days={float(tau_days_api):.0f} (UI τ={float(tau_val):.0f}). Check for mismatch.")

@@ -54,10 +54,19 @@ except Exception:
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")
 
+import os
+
+BUILD_ID = "BUILD_2025_12_21_A"
+
 # Health check: ελαφρύ, για Render/monitors
 @app.get("/health")
 def health_check() -> dict:
-    return {"ok": True}
+    return {
+        "ok": True,
+        "build": BUILD_ID,
+        "file": __file__,
+        "cwd": os.getcwd(),
+    }
 
 # Root: δείχνει αν τα μοντέλα είναι φορτωμένα
 @app.get("/")
@@ -65,18 +74,33 @@ def root() -> dict:
     try:
         _ensure_models_loaded()
         model_ok = bool(clf and reg_short and reg_long)
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": model_ok}
+        return {
+            "name": "ProcureSight API",
+            "version": "1.0",
+            "model_loaded": model_ok,
+            "build": BUILD_ID,
+            "file": __file__,
+        }
     except Exception as e:
-        return {"name": "ProcureSight API", "version": "1.0", "model_loaded": False, "error": str(e)}
-    
-import os
+        return {
+            "name": "ProcureSight API",
+            "version": "1.0",
+            "model_loaded": False,
+            "error": str(e),
+            "build": BUILD_ID,
+            "file": __file__,
+        }
 
+# Debug endpoint: δείχνει ξεκάθαρα ποιο αρχείο τρέχει
 @app.get("/where")
 def where():
     return {
+        "ok": True,
+        "build": BUILD_ID,
         "file": __file__,
         "cwd": os.getcwd(),
     }
+
 
 # ---------- Globals / defaults ----------
 features: Dict[str, Any] = {}

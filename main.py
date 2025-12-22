@@ -51,17 +51,6 @@ except Exception:
         pred_long: float
         build: str
         
-        # UI risk threshold (days)
-        tau_days: float
-
-        # internals for debugging / transparency
-        p_long: float
-        tau_prob: float
-        stage_used: str
-        pred_short: float
-        pred_long: float
-
-
 # ---------- App ----------
 app = FastAPI(title="ProcureSight API", version="1.0")
 

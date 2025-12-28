@@ -312,8 +312,8 @@ def _build_dataframe(req: PredictRequest) -> pd.DataFrame:
         X.loc[need_fix, "lot_bidsCount_log"] = approx_ln
 
     # Safeguard if target_duration accidentally is in features list
-    if "target_duration" in X.columns and X["target_duration"].isna().any():
-        X["target_duration"] = 700.0
+    #if "target_duration" in X.columns and X["target_duration"].isna().any():
+    #    X["target_duration"] = 700.0
 
     # Dtypes policy (respect categorical list)
     for c in X.columns:

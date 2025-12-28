@@ -1447,7 +1447,8 @@ with t1:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
             st.error(f"Prediction failed: {e}")
-
+            st.code(traceback.format_exc())
+            st.stop()
 # ================== Tab 2: Batch from CSV ==================
 with t2:
     if not can_batch:

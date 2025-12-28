@@ -1441,9 +1441,6 @@ with t1:
                     }
                 )
 
-            with st.expander("Raw response (full)"):
-                st.json(res)
-
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:

@@ -1268,7 +1268,6 @@ with t1:
             value=2023,
             step=1,
         )
-        # inline warning για year
         if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
             st.warning(
                 f"Year should be between {MIN_SINGLE_YEAR} and {MAX_SINGLE_YEAR} "
@@ -1291,7 +1290,6 @@ with t1:
             value=4,
             step=1,
         )
-        # inline warning για bids
         if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
             st.warning(
                 f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
@@ -1348,7 +1346,6 @@ with t1:
     if fix_on:
         tender_supplyType = inferred_supply
 
-    # κουμπί predict
     left, right = st.columns([1, 3])
     with left:
         run_single = st.button("🔮 Predict", use_container_width=True)
@@ -1367,7 +1364,7 @@ with t1:
             )
             st.stop()
 
-        # ---- business validation (English messages) ----
+        # ---- business validation ----
         errors: list[str] = []
 
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
@@ -1407,58 +1404,69 @@ with t1:
             "tender_estimatedPrice_EUR": price,
             "lot_bidsCount": bids,
 
-            "tender_estimatedPrice_EUR_log": np.log1p(price) if price is not None else None,
-            "lot_bidsCount_log": np.log1p(bids) if bids is not None else None,
-           
+            # log-features expected by features.json (API also can fix, but send them)
+            "tender_estimatedPrice_EUR_log": float(np.log1p(price)) if price is not None else None,
+            "lot_bidsCount_log": float(np.log1p(bids)) if bids is not None else None,
         }
 
         try:
-            res = api_predict(payload, tau=float(tau_val))
+            resp = api_predict(payload, tau=float(tau_val))
 
-            pred = float(res.get("predicted_days", float("nan")))
-            # προτίμησε risk_flag από API, αλλιώς fallback
-            flag = bool(res.get("risk_flag")) if "risk_flag" in res else bool(pred >= float(tau_val))
+            # ---------- UI: clean + "logical" presentation ----------
+            pred = float(resp.get("predicted_days", float("nan")))
+            tau_days = float(resp.get("tau_days", tau_val))
+            stage = resp.get("stage_used", "—")
+            ps = resp.get("pred_short", None)
+            pl = resp.get("pred_long", None)
+            flag = bool(resp.get("risk_flag")) if "risk_flag" in resp else bool(pred >= tau_days)
 
-            # --- NEW: internals (αν τα στέλνει το API) ---
-            p_long = res.get("p_long", None)
-            stage_used = res.get("stage_used", None)
-            pred_short = res.get("pred_short", None)
-            pred_long_val = res.get("pred_long", None)
-            tau_prob = res.get("tau_prob", None)
-            tau_days_api = res.get("tau_days", None)
-
+            # sticky chips (keep your existing)
             st.markdown('<div class="sticky-toolbar">', unsafe_allow_html=True)
             chip(f"Top-K: {int(st.session_state.get('topk', TOP_K_DEFAULT))}")
             st.markdown("&nbsp;", unsafe_allow_html=True)
             chip(f"Min count: {int(st.session_state.get('mincnt', MIN_COUNT_DEFAULT))}")
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # --- Main KPIs ---
+            # Main KPIs (show FINAL predicted clearly)
             k1, k2, k3 = st.columns([1, 1, 1])
             with k1:
-                kpi_card("Predicted days", f"{pred:,.0f}", f"τ = {float(tau_val):.0f} days")
+                kpi_card("Predicted days (final)", f"{pred:,.0f}", f"τ = {tau_days:.0f} days")
             with k2:
                 kpi_card("Risk flag", "HIGH" if flag else "LOW", "predicted vs τ")
             with k3:
-                kpi_card("Model", res.get("model_used", "—"), f"API: {api_base_in}")
+                kpi_card("Model", resp.get("model_used", "—"), f"API: {api_base_in}")
 
-            # --- Optional: show what τ the API thinks it used for risk ---
-            if tau_days_api is not None and float(tau_days_api) != float(tau_val):
-                st.warning(f"API returned tau_days={float(tau_days_api):.0f} (UI τ={float(tau_val):.0f}). Check for mismatch.")
+            # Simple visual vs threshold
+            st.caption(f"Threshold τ = {tau_days:.0f} days")
+            ratio = 0.0
+            if tau_days > 0 and np.isfinite(pred):
+                ratio = min(pred / tau_days, 2.0) / 2.0  # clamp
+            st.progress(float(ratio))
 
-            with st.expander("Raw response"):
-                st.json(res)
+            # Explain routing in plain language (this is what makes it “readable”)
+            if (stage == "short_reg") and (ps is not None):
+                st.success(f"Short model used γιατί pred_short={float(ps):.0f} < τ={tau_days:.0f}")
+            elif (stage == "long_reg") and (ps is not None):
+                st.warning(f"Long model used γιατί pred_short={float(ps):.0f} ≥ τ={tau_days:.0f}")
+            else:
+                st.info(f"Stage used: {stage}")
 
-            with st.expander("Sanity check"):
-                extra = []
-                if (p_long is not None) and (tau_prob is not None):
-                    extra.append(f"p_long={float(p_long):.4f} vs τ_prob={float(tau_prob):.4f} → stage={stage_used}")
-                if (pred_short is not None) and (pred_long_val is not None):
-                    extra.append(f"pred_short={float(pred_short):.1f}, pred_long={float(pred_long_val):.1f}")
-                st.info(
-                    f"predicted_days={pred:.1f} vs τ_days={float(tau_val):.0f} → risk_flag={flag}"
-                    + (("\n\n" + "\n".join(extra)) if extra else "")
-                )
+            # Show both estimates (no shock — clear labels)
+            cA, cB = st.columns(2)
+            with cA:
+                if ps is not None:
+                    st.metric("Short estimate", f"{float(ps):.0f} days")
+                else:
+                    st.metric("Short estimate", "—")
+            with cB:
+                if pl is not None:
+                    st.metric("Long estimate", f"{float(pl):.0f} days")
+                else:
+                    st.metric("Long estimate", "—")
+
+            # Raw only in expander
+            with st.expander("Raw response (debug)"):
+                st.json(resp)
 
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")

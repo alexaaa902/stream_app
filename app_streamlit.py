@@ -1394,16 +1394,22 @@ with t1:
             )
             st.stop()
 
+        price = float(tender_estimatedPrice_EUR) if tender_estimatedPrice_EUR is not None else None
+        bids  = float(lot_bidsCount) if lot_bidsCount is not None else None
+
         payload = {
             "tender_country": tender_country,
             "tender_procedureType": tender_procedureType,
             "tender_supplyType": tender_supplyType,
             "tender_mainCpv": str(tender_mainCpv).strip(),
             "tender_year": int(tender_year),
-            "tender_estimatedPrice_EUR": float(tender_estimatedPrice_EUR),
-            "lot_bidsCount": float(lot_bidsCount),
-            "tender_estimatedPrice_EUR_log": float(np.log1p(tender_estimatedPrice_EUR)),
-            "lot_bidsCount_log": float(np.log1p(lot_bidsCount)),
+
+            "tender_estimatedPrice_EUR": price,
+            "lot_bidsCount": bids,
+
+            "tender_estimatedPrice_EUR_log": np.log1p(price) if price is not None else None,
+            "lot_bidsCount_log": np.log1p(bids) if bids is not None else None,
+           
         }
 
         try:

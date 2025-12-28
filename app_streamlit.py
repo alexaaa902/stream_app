@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import requests
+import traceback
 
 # ---------- helpers ----------
 def _slug(s: str) -> str:

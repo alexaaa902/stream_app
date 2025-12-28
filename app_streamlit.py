@@ -1406,17 +1406,17 @@ with t1:
 
             # WHY message (router logic + forced override)
             if stage == "long_reg (forced)":
-                st.warning("Χρησιμοποιήθηκε LONG επειδή ενεργοποίησες το Force long (override router).")
+                st.warning("LONG model forced by UI override (Force long).")
             elif stage == "short_reg":
                 if ps is not None:
-                    st.success(f"Χρησιμοποιήθηκε SHORT γιατί pred_short={ps:,.0f} < τ={tau_days:,.0f}")
+                    st.success(f"SHORT selected because p_long={res.get('p_long'):.3f} < τ_prob={res.get('tau_prob'):.3f}.")
                 else:
-                    st.success("Χρησιμοποιήθηκε SHORT (stage_used=short_reg)")
+                    st.success("SHORT (stage_used=short_reg)is used")
             elif stage == "long_reg":
                 if ps is not None:
-                    st.warning(f"Χρησιμοποιήθηκε LONG γιατί pred_short={ps:,.0f} ≥ τ={tau_days:,.0f}")
+                    st.warning(f"LONG selected because p_long={res.get('p_long'):.3f} ≥ τ_prob={res.get('tau_prob'):.3f}.")
                 else:
-                    st.warning("Χρησιμοποιήθηκε LONG (stage_used=long_reg)")
+                    st.warning("LONG (stage_used=long_reg) is used")
             else:
                 st.info(f"stage_used={stage}")
 

@@ -1363,66 +1363,83 @@ with t1:
         try:
             res = api_predict(payload, tau=float(tau_val))
 
-            # --- pull values ---
+            # ====== Parse fields safely ======
             pred = float(res.get("predicted_days", float("nan")))
-            tau_days = float(res.get("tau_days", tau_val))
+            tau_days = float(res.get("tau_days", tau_val))  # προτίμησε αυτό που λέει το API
             stage = str(res.get("stage_used", "—"))
-            ps = float(res.get("pred_short", float("nan")))
-            pl = float(res.get("pred_long", float("nan")))
-            p_long = res.get("p_long", None)
-            tau_prob = res.get("tau_prob", None)
 
-            # If demo override is ON, show “what if long”
-            pred_display = pl if force_long and np.isfinite(pl) else pred
-            stage_display = "long_reg (forced)" if force_long else stage
-            risk_flag = bool(pred_display >= tau_days)
+            ps = res.get("pred_short", None)
+            pl = res.get("pred_long", None)
 
-            st.markdown('<div class="sticky-toolbar">', unsafe_allow_html=True)
-            chip(f"Top-K: {int(st.session_state.get('topk', TOP_K_DEFAULT))}")
-            st.markdown("&nbsp;", unsafe_allow_html=True)
-            chip(f"Min count: {int(st.session_state.get('mincnt', MIN_COUNT_DEFAULT))}")
-            st.markdown("</div>", unsafe_allow_html=True)
+            ps = float(ps) if ps is not None else None
+            pl = float(pl) if pl is not None else None
 
-            # --- Main KPIs (cleaner) ---
-            k1, k2, k3 = st.columns([1, 1, 1])
-            with k1:
-                kpi_card("Predicted days", f"{pred_display:,.0f}", f"τ = {tau_days:,.0f} days")
-            with k2:
-                kpi_card("Risk", "HIGH" if risk_flag else "LOW", "predicted vs τ")
-            with k3:
-                kpi_card("Stage used", stage_display, res.get("model_used", "—"))
+            flag = bool(res.get("risk_flag", pred >= tau_days))
 
-            # --- simple visual (how close to τ) ---
-            ratio = 0.0 if (tau_days <= 0 or not np.isfinite(pred_display)) else min(pred_display / tau_days, 2.0) / 2.0
-            st.progress(ratio)
-            st.caption(f"Progress shows predicted/τ (clamped). {pred_display:,.0f} / {tau_days:,.0f}")
+            # ====== Nice top summary (3 numbers) ======
+            c1, c2, c3 = st.columns(3)
 
-            # --- Explain BOTH models clearly ---
-            st.markdown("#### What the two models say")
-            cA, cB = st.columns(2)
-            with cA:
-                st.metric("Short model (pred_short)", f"{ps:,.0f}" if np.isfinite(ps) else "—")
-            with cB:
-                st.metric("Long model (pred_long)", f"{pl:,.0f}" if np.isfinite(pl) else "—")
+            with c1:
+                st.metric("Final (used) days", f"{pred:,.0f}")
+                st.caption(f"Threshold τ = {tau_days:,.0f} days")
+            with c2:
+                st.metric("Short estimate", "—" if ps is None else f"{ps:,.0f}")
+                st.caption("pred_short (short model)")
+            with c3:
+                st.metric("Long estimate", "—" if pl is None else f"{pl:,.0f}")
+                st.caption("pred_long (long model)")
 
-            # --- Explain router decision (why stage) ---
-            st.markdown("#### Why this stage was chosen")
-            if (p_long is not None) and (tau_prob is not None):
-                st.info(
-                    f"Router: p_long={float(p_long):.3f} vs τ_prob={float(tau_prob):.3f} → stage={stage}"
-                    + (" (you forced long above)" if force_long else "")
-                )
+            # ====== Risk + explanation (WHY) ======
+            st.divider()
+
+            # Progress bar vs threshold (clamped)
+            if tau_days > 0 and math.isfinite(pred):
+                ratio = pred / tau_days
+                st.progress(min(max(ratio, 0.0), 2.0) / 2.0)  # 0..2 mapped to 0..1
+                st.caption(f"{ratio:.2f} × τ (pred / τ)")
+
+            if stage == "short_reg":
+            # rule: short because pred_short < tau
+                if ps is not None:
+                    st.success(f"Χρησιμοποιήθηκε SHORT γιατί pred_short={ps:,.0f} < τ={tau_days:,.0f}")
+                else:
+                    st.success("Χρησιμοποιήθηκε SHORT (stage_used=short_reg)")
+            elif stage == "long_reg":
+                if ps is not None:
+                    st.warning(f"Χρησιμοποιήθηκε LONG γιατί pred_short={ps:,.0f} ≥ τ={tau_days:,.0f}")
+                else:
+                    st.warning("Χρησιμοποιήθηκε LONG (stage_used=long_reg)")
             else:
-                st.info(f"Stage from API: {stage}" + (" (you forced long above)" if force_long else ""))
+                st.info(f"stage_used={stage}")
 
-            with st.expander("Raw response (debug)"):
+           # Risk badge
+            st.markdown("### Risk")
+            st.write("**HIGH**" if flag else "**LOW**")
+            st.caption("Final (used) compared to τ")
+
+           # ====== Optional: keep details but not scary ======
+            with st.expander("Details (debug)"):
+                st.json(
+                    {
+                        "predicted_days": pred,
+                        "tau_days": tau_days,
+                        "stage_used": stage,
+                        "pred_short": ps,
+                        "pred_long": pl,
+                        "risk_flag": flag,
+                        "p_long": res.get("p_long", None),
+                        "tau_prob": res.get("tau_prob", None),
+                        "build": res.get("build", None),
+                    }
+                )
+
+            with st.expander("Raw response (full)"):
                 st.json(res)
 
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
             st.error(f"Prediction failed: {e}")
-
 
 # ================== Tab 2: Batch from CSV ==================
 with t2:

@@ -413,7 +413,7 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
         y_short = float(reg_short.predict(Xs)[0])
         y_long = float(reg_long.predict(Xl)[0])
 
-        if p is None or not math.isfinite(p):
+        if p is None or not np.isfinite(p):
             p = 0.0
 
         # 6) combine (routing based on probability threshold)

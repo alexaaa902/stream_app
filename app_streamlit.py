@@ -1263,16 +1263,9 @@ with t1:
         tender_supplyType = st.selectbox("Supply type", ["WORKS", "SUPPLIES", "SERVICES"])
 
     with col2:
-        tender_year = st.number_input(
-            "Year",
-            value=2023,
-            step=1,
-        )
+        tender_year = st.number_input("Year", value=2023, step=1)
         if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
-            st.warning(
-                f"Year should be between {MIN_SINGLE_YEAR} and {MAX_SINGLE_YEAR} "
-                f"for this demo."
-            )
+            st.warning(f"Year should be between {MIN_SINGLE_YEAR} and {MAX_SINGLE_YEAR} for this demo.")
 
         tender_estimatedPrice_EUR = st.number_input(
             "Estimated price (EUR)",
@@ -1281,20 +1274,11 @@ with t1:
             value=3_000_000.0,
         )
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
-            st.warning(
-                f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR."
-            )
+            st.warning(f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR.")
 
-        lot_bidsCount = st.number_input(
-            "Bids count",
-            value=4,
-            step=1,
-        )
+        lot_bidsCount = st.number_input("Bids count", value=4, step=1)
         if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
-            st.warning(
-                f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
-                f"for this demo."
-            )
+            st.warning(f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} for this demo.")
 
         tau_val = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
@@ -1312,11 +1296,7 @@ with t1:
         "71300000", "80500000", "72000000", "90400000", "34900000",
         "79900000", "50500000",
     ]
-    cpv_mode = st.selectbox(
-        "Main CPV",
-        ["Custom…"] + [cpv_label(c) for c in cpv_codes],
-        index=1,
-    )
+    cpv_mode = st.selectbox("Main CPV", ["Custom…"] + [cpv_label(c) for c in cpv_codes], index=1)
     tender_mainCpv = (
         st.text_input("Enter CPV code (8 digits)", "45200000")
         if cpv_mode == "Custom…" else cpv_mode.split(" — ")[0]
@@ -1335,16 +1315,15 @@ with t1:
 
     inferred_supply = infer_supply_from_cpv(tender_mainCpv)
     need_fix = inferred_supply != "UNKNOWN" and inferred_supply != tender_supplyType
-    fix_on = st.toggle(
-        f"Auto-fix supply type to {inferred_supply}", value=True
-    ) if need_fix else False
+    fix_on = st.toggle(f"Auto-fix supply type to {inferred_supply}", value=True) if need_fix else False
     if need_fix and not fix_on:
-        st.error(
-            "Supply type and CPV disagree. Enable Auto-fix or change one of them to continue."
-        )
+        st.error("Supply type and CPV disagree. Enable Auto-fix or change one of them to continue.")
         st.stop()
     if fix_on:
         tender_supplyType = inferred_supply
+
+    # Optional demo: force long model in UI (override)
+    force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
 
     left, right = st.columns([1, 3])
     with left:
@@ -1353,42 +1332,16 @@ with t1:
         st.caption("")
 
     if run_single:
-        inferred_supply2 = infer_supply_from_cpv(tender_mainCpv)
-        if (
-            inferred_supply2 != "UNKNOWN"
-            and inferred_supply2 != tender_supplyType
-            and not st.session_state.get("fix_supply_cpv", False)
-        ):
-            st.error(
-                "Supply type and CPV still disagree. Enable Auto-fix or change one of them to continue."
-            )
-            st.stop()
-
-        # ---- business validation ----
         errors: list[str] = []
-
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:
-            errors.append(
-                f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR."
-            )
-
+            errors.append(f"Estimated price must be at least {MIN_SINGLE_EST_PRICE:,.0f} EUR.")
         if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
-            errors.append(
-                f"Year must be between {MIN_SINGLE_YEAR} and {MAX_SINGLE_YEAR} "
-                f"(got {int(tender_year)})."
-            )
-
+            errors.append(f"Year must be between {MIN_SINGLE_YEAR} and {MAX_SINGLE_YEAR} (got {int(tender_year)}).")
         if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
-            errors.append(
-                f"Bids count must be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} "
-                f"(got {int(lot_bidsCount)})."
-            )
+            errors.append(f"Bids count must be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} (got {int(lot_bidsCount)}).")
 
         if errors:
-            st.error(
-                "Please fix the following before requesting a prediction:\n\n- "
-                + "\n- ".join(errors)
-            )
+            st.error("Please fix the following before requesting a prediction:\n\n- " + "\n- ".join(errors))
             st.stop()
 
         price = float(tender_estimatedPrice_EUR) if tender_estimatedPrice_EUR is not None else None
@@ -1400,78 +1353,76 @@ with t1:
             "tender_supplyType": tender_supplyType,
             "tender_mainCpv": str(tender_mainCpv).strip(),
             "tender_year": int(tender_year),
-
             "tender_estimatedPrice_EUR": price,
             "lot_bidsCount": bids,
-
-            # log-features expected by features.json (API also can fix, but send them)
+            # important engineered features
             "tender_estimatedPrice_EUR_log": float(np.log1p(price)) if price is not None else None,
             "lot_bidsCount_log": float(np.log1p(bids)) if bids is not None else None,
         }
 
         try:
-            resp = api_predict(payload, tau=float(tau_val))
+            res = api_predict(payload, tau=float(tau_val))
 
-            # ---------- UI: clean + "logical" presentation ----------
-            pred = float(resp.get("predicted_days", float("nan")))
-            tau_days = float(resp.get("tau_days", tau_val))
-            stage = resp.get("stage_used", "—")
-            ps = resp.get("pred_short", None)
-            pl = resp.get("pred_long", None)
-            flag = bool(resp.get("risk_flag")) if "risk_flag" in resp else bool(pred >= tau_days)
+            # --- pull values ---
+            pred = float(res.get("predicted_days", float("nan")))
+            tau_days = float(res.get("tau_days", tau_val))
+            stage = str(res.get("stage_used", "—"))
+            ps = float(res.get("pred_short", float("nan")))
+            pl = float(res.get("pred_long", float("nan")))
+            p_long = res.get("p_long", None)
+            tau_prob = res.get("tau_prob", None)
 
-            # sticky chips (keep your existing)
+            # If demo override is ON, show “what if long”
+            pred_display = pl if force_long and np.isfinite(pl) else pred
+            stage_display = "long_reg (forced)" if force_long else stage
+            risk_flag = bool(pred_display >= tau_days)
+
             st.markdown('<div class="sticky-toolbar">', unsafe_allow_html=True)
             chip(f"Top-K: {int(st.session_state.get('topk', TOP_K_DEFAULT))}")
             st.markdown("&nbsp;", unsafe_allow_html=True)
             chip(f"Min count: {int(st.session_state.get('mincnt', MIN_COUNT_DEFAULT))}")
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # Main KPIs (show FINAL predicted clearly)
+            # --- Main KPIs (cleaner) ---
             k1, k2, k3 = st.columns([1, 1, 1])
             with k1:
-                kpi_card("Predicted days (final)", f"{pred:,.0f}", f"τ = {tau_days:.0f} days")
+                kpi_card("Predicted days", f"{pred_display:,.0f}", f"τ = {tau_days:,.0f} days")
             with k2:
-                kpi_card("Risk flag", "HIGH" if flag else "LOW", "predicted vs τ")
+                kpi_card("Risk", "HIGH" if risk_flag else "LOW", "predicted vs τ")
             with k3:
-                kpi_card("Model", resp.get("model_used", "—"), f"API: {api_base_in}")
+                kpi_card("Stage used", stage_display, res.get("model_used", "—"))
 
-            # Simple visual vs threshold
-            st.caption(f"Threshold τ = {tau_days:.0f} days")
-            ratio = 0.0
-            if tau_days > 0 and np.isfinite(pred):
-                ratio = min(pred / tau_days, 2.0) / 2.0  # clamp
-            st.progress(float(ratio))
+            # --- simple visual (how close to τ) ---
+            ratio = 0.0 if (tau_days <= 0 or not np.isfinite(pred_display)) else min(pred_display / tau_days, 2.0) / 2.0
+            st.progress(ratio)
+            st.caption(f"Progress shows predicted/τ (clamped). {pred_display:,.0f} / {tau_days:,.0f}")
 
-            # Explain routing in plain language (this is what makes it “readable”)
-            if (stage == "short_reg") and (ps is not None):
-                st.success(f"Short model used γιατί pred_short={float(ps):.0f} < τ={tau_days:.0f}")
-            elif (stage == "long_reg") and (ps is not None):
-                st.warning(f"Long model used γιατί pred_short={float(ps):.0f} ≥ τ={tau_days:.0f}")
-            else:
-                st.info(f"Stage used: {stage}")
-
-            # Show both estimates (no shock — clear labels)
+            # --- Explain BOTH models clearly ---
+            st.markdown("#### What the two models say")
             cA, cB = st.columns(2)
             with cA:
-                if ps is not None:
-                    st.metric("Short estimate", f"{float(ps):.0f} days")
-                else:
-                    st.metric("Short estimate", "—")
+                st.metric("Short model (pred_short)", f"{ps:,.0f}" if np.isfinite(ps) else "—")
             with cB:
-                if pl is not None:
-                    st.metric("Long estimate", f"{float(pl):.0f} days")
-                else:
-                    st.metric("Long estimate", "—")
+                st.metric("Long model (pred_long)", f"{pl:,.0f}" if np.isfinite(pl) else "—")
 
-            # Raw only in expander
+            # --- Explain router decision (why stage) ---
+            st.markdown("#### Why this stage was chosen")
+            if (p_long is not None) and (tau_prob is not None):
+                st.info(
+                    f"Router: p_long={float(p_long):.3f} vs τ_prob={float(tau_prob):.3f} → stage={stage}"
+                    + (" (you forced long above)" if force_long else "")
+                )
+            else:
+                st.info(f"Stage from API: {stage}" + (" (you forced long above)" if force_long else ""))
+
             with st.expander("Raw response (debug)"):
-                st.json(resp)
+                st.json(res)
 
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
             st.error(f"Prediction failed: {e}")
+
 
 # ================== Tab 2: Batch from CSV ==================
 with t2:

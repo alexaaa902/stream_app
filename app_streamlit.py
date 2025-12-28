@@ -1404,7 +1404,6 @@ with t1:
             "lot_bidsCount": float(lot_bidsCount),
             "tender_estimatedPrice_EUR_log": float(np.log1p(tender_estimatedPrice_EUR)),
             "lot_bidsCount_log": float(np.log1p(lot_bidsCount)),
-            "target_duration": 700,
         }
 
         try:

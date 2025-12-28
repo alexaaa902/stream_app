@@ -1,5 +1,5 @@
 # app_streamlit.py — Early warnings & aggregated risk summaries — ProcureSight
-import os, io, zipfile, re, json
+import os, io, zipfile, re, json, math
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -1323,7 +1323,10 @@ with t1:
         tender_supplyType = inferred_supply
 
     # Optional demo: force long model in UI (override)
-    force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
+    if force_long and (pl is not None):
+        pred = pl
+        stage = "long_reg (forced)"
+        flag = bool(pred >= tau_days)
 
     left, right = st.columns([1, 3])
     with left:
@@ -1399,7 +1402,7 @@ with t1:
                 st.caption(f"{ratio:.2f} × τ (pred / τ)")
 
             if stage == "short_reg":
-            # rule: short because pred_short < tau
+                # rule: short because pred_short < tau
                 if ps is not None:
                     st.success(f"Χρησιμοποιήθηκε SHORT γιατί pred_short={ps:,.0f} < τ={tau_days:,.0f}")
                 else:
@@ -1412,7 +1415,6 @@ with t1:
             else:
                 st.info(f"stage_used={stage}")
 
-           # Risk badge
             st.markdown("### Risk")
             st.write("**HIGH**" if flag else "**LOW**")
             st.caption("Final (used) compared to τ")

@@ -401,12 +401,32 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
 def predict_debug(req: PredictRequest):
     _ensure_models_loaded()
     X = _build_dataframe(req)
+
     Xc = _align_to_booster(X.copy(), clf)
+    Xs = _align_to_booster(X.copy(), reg_short)
+    Xl = _align_to_booster(X.copy(), reg_long)
+
+    def row_dict(df):
+        return {k: (None if (pd.isna(v) or v is pd.NA) else v) for k, v in df.iloc[0].to_dict().items()}
 
     return {
-        "X_columns": list(Xc.columns),
-        "X_values": Xc.iloc[0].to_dict()
+        "raw_X_cols": list(X.columns),
+        "raw_X_row": row_dict(X),
+
+        "clf_cols": list(Xc.columns),
+        "clf_row": row_dict(Xc),
+
+        "short_cols": list(Xs.columns),
+        "short_row": row_dict(Xs),
+
+        "long_cols": list(Xl.columns),
+        "long_row": row_dict(Xl),
+
+        "clf_expected": list(clf.feature_name()) if clf is not None else None,
+        "short_expected": list(reg_short.feature_name()) if reg_short is not None else None,
+        "long_expected": list(reg_long.feature_name()) if reg_long is not None else None,
     }
+
 
 
     except HTTPException:

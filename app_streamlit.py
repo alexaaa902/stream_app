@@ -1483,36 +1483,67 @@ with t2:
             top_k = st.number_input("Top-K (charts)", min_value=5, max_value=50, value=12, step=1)
 
         def _prepare_rows(df_src: pd.DataFrame) -> list[dict]:
+            """
+            Prepare rows for /predict_batch
+            - works with new & old features.json
+            - NEVER sends target_duration
+            """
             feat_path = "procuresight_api/model/features.json"
+
+            # --- read feature list safely ---
+            feat_cols = None
             if os.path.exists(feat_path):
-                with open(feat_path, "r", encoding="utf-8") as f:
-                    FEATS = json.load(f)
-                feat_cols = FEATS.get("features", list(df_src.columns))
-            else:
+                try:
+                    with open(feat_path, "r", encoding="utf-8") as f:
+                        FEATS = json.load(f)
+
+                    feat_cols = (
+                        FEATS.get("features")
+                        or FEATS.get("feature_columns")
+                        or FEATS.get("featureColumns")
+                    )
+                except Exception:
+                    feat_cols = None
+
+            if not feat_cols:
                 feat_cols = list(df_src.columns)
+
+            # 🔒 hard stop: never allow target_duration
+            feat_cols = [c for c in feat_cols if c != "target_duration"]
 
             rows: list[dict] = []
             for _, r in df_src.iterrows():
                 d = {c: r[c] for c in feat_cols if c in df_src.columns}
-                if "tender_estimatedPrice_EUR" in d and "tender_estimatedPrice_EUR_log" in feat_cols:
-                    d.setdefault(
-                        "tender_estimatedPrice_EUR_log",
-                        float(np.log1p(d.get("tender_estimatedPrice_EUR", 0) or 0)),
-                    )
-                if "lot_bidsCount" in d and "lot_bidsCount_log" in feat_cols:
-                    d.setdefault(
-                        "lot_bidsCount_log",
-                        float(np.log1p(d.get("lot_bidsCount", 0) or 0)),
-                    )
+
+                # double safety
+                d.pop("target_duration", None)
+
+                # --- normalize country codes ---
                 if "tender_country" in d and pd.notna(d["tender_country"]):
                     d["tender_country"] = str(d["tender_country"]).upper().strip()
+
+                if "buyer_country" in d and pd.notna(d["buyer_country"]):
+                    d["buyer_country"] = str(d["buyer_country"]).upper().strip()
+
+                # --- normalize CPV ---
                 if "tender_mainCpv" in d and pd.notna(d["tender_mainCpv"]):
                     cpv = str(d["tender_mainCpv"]).strip()
                     if cpv.endswith(".0"):
                         cpv = cpv[:-2]
                     cpv = "".join(ch for ch in cpv if ch.isdigit())[:8]
                     d["tender_mainCpv"] = cpv
+
+                # --- add logs ONLY if model expects them ---
+                if "tender_estimatedPrice_EUR_log" in feat_cols:
+                    base = pd.to_numeric(d.get("tender_estimatedPrice_EUR"), errors="coerce")
+                    d["tender_estimatedPrice_EUR_log"] = None if pd.isna(base) else float(np.log1p(base))
+
+                if "lot_bidsCount_log" in feat_cols:
+                    base = pd.to_numeric(d.get("lot_bidsCount"), errors="coerce")
+                    d["lot_bidsCount_log"] = None if pd.isna(base) else float(np.log1p(base))
+
                 rows.append(d)
+
             return rows
 
         # ---- display + call API ----
@@ -1665,7 +1696,9 @@ with t2:
 
                     df_rank_src2 = df_rank_src.copy()
                     base_series = pd.Series([np.nan] * len(df_rank_src2), index=df_rank_src2.index)
-                    df_rank_src2["cpv_div2"] = pd.to_numeric(df_rank_src2.get("cpv_div2", base_series), errors="coerce")
+                    df_rank_src2["cpv_div2"] = pd.to_numeric(
+                        df_rank_src2.get("cpv_div2", base_series), errors="coerce"
+                    )
                     if df_rank_src2["cpv_div2"].isna().all():
                         s_cpv = (
                             df_rank_src2["tender_mainCpv"].astype(str)
@@ -1772,10 +1805,12 @@ with t2:
                     )
             except requests.HTTPError as e:
                 st.error(
-                    f"API error: {e.status_code if hasattr(e, 'status_code') else ''} — {e.response.text if hasattr(e, 'response') else e}"
+                    f"API error: {e.status_code if hasattr(e, 'status_code') else ''} — "
+                    f"{e.response.text if hasattr(e, 'response') else e}"
                 )
             except Exception as e:
                 st.error(f"Failed to run batch: {e}")
+
 
 # ================== Tab 3: Connection / Debug ==================
 with t3:

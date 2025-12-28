@@ -1322,11 +1322,9 @@ with t1:
     if fix_on:
         tender_supplyType = inferred_supply
 
-    # Optional demo: force long model in UI (override)
-    if force_long and (pl is not None):
-        pred = pl
-        stage = "long_reg (forced)"
-        flag = bool(pred >= tau_days)
+    # ✅ Optional demo: force long model in UI (override router)
+    # (must be defined BEFORE clicking Predict, but applied AFTER we parse API response)
+    force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
 
     left, right = st.columns([1, 3])
     with left:
@@ -1368,20 +1366,24 @@ with t1:
 
             # ====== Parse fields safely ======
             pred = float(res.get("predicted_days", float("nan")))
-            tau_days = float(res.get("tau_days", tau_val))  # προτίμησε αυτό που λέει το API
+            tau_days = float(res.get("tau_days", tau_val))  # prefer what API says
             stage = str(res.get("stage_used", "—"))
 
             ps = res.get("pred_short", None)
             pl = res.get("pred_long", None)
-
             ps = float(ps) if ps is not None else None
             pl = float(pl) if pl is not None else None
 
             flag = bool(res.get("risk_flag", pred >= tau_days))
 
+            # ✅ APPLY FORCE-LONG OVERRIDE HERE (after parsing)
+            if force_long and (pl is not None):
+                pred = pl
+                stage = "long_reg (forced)"
+                flag = bool(pred >= tau_days)
+
             # ====== Nice top summary (3 numbers) ======
             c1, c2, c3 = st.columns(3)
-
             with c1:
                 st.metric("Final (used) days", f"{pred:,.0f}")
                 st.caption(f"Threshold τ = {tau_days:,.0f} days")
@@ -1396,13 +1398,15 @@ with t1:
             st.divider()
 
             # Progress bar vs threshold (clamped)
-            if tau_days > 0 and math.isfinite(pred):
+            if tau_days > 0 and np.isfinite(pred):
                 ratio = pred / tau_days
                 st.progress(min(max(ratio, 0.0), 2.0) / 2.0)  # 0..2 mapped to 0..1
                 st.caption(f"{ratio:.2f} × τ (pred / τ)")
 
-            if stage == "short_reg":
-                # rule: short because pred_short < tau
+            # WHY message (router logic + forced override)
+            if stage == "long_reg (forced)":
+                st.warning("Χρησιμοποιήθηκε LONG επειδή ενεργοποίησες το Force long (override router).")
+            elif stage == "short_reg":
                 if ps is not None:
                     st.success(f"Χρησιμοποιήθηκε SHORT γιατί pred_short={ps:,.0f} < τ={tau_days:,.0f}")
                 else:
@@ -1419,15 +1423,16 @@ with t1:
             st.write("**HIGH**" if flag else "**LOW**")
             st.caption("Final (used) compared to τ")
 
-           # ====== Optional: keep details but not scary ======
+            # ====== Optional: keep details but not scary ======
             with st.expander("Details (debug)"):
                 st.json(
                     {
-                        "predicted_days": pred,
+                        "predicted_days_final_used": pred,
                         "tau_days": tau_days,
                         "stage_used": stage,
                         "pred_short": ps,
                         "pred_long": pl,
+                        "force_long": force_long,
                         "risk_flag": flag,
                         "p_long": res.get("p_long", None),
                         "tau_prob": res.get("tau_prob", None),

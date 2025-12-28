@@ -397,6 +397,17 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
             pred_long=float(y_long),
             build="BUILD_2025_12_21_A",
         )
+@app.post("/predict_debug")
+def predict_debug(req: PredictRequest):
+    _ensure_models_loaded()
+    X = _build_dataframe(req)
+    Xc = _align_to_booster(X.copy(), clf)
+
+    return {
+        "X_columns": list(Xc.columns),
+        "X_values": Xc.iloc[0].to_dict()
+    }
+
 
     except HTTPException:
         raise

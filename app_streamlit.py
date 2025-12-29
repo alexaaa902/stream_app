@@ -10,7 +10,7 @@ import traceback
 
 st.set_page_config(page_title="Risk alerts & summaries — ProcureSight", layout="wide")
 
-st.warning("RUNNING: stream_app/app_streamlit.py — BUILD 2025-12-29")
+#st.warning("RUNNING: stream_app/app_streamlit.py — BUILD 2025-12-29")
 
 
 # ---------- helpers ----------

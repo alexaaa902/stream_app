@@ -1411,12 +1411,6 @@ with t1:
                 st.metric("Long-duration probability", "—" if not np.isfinite(p_long) else f"{p_long*100:.1f}%")
                 st.caption("Confidence this case belongs to the long-duration regime")
 
-            # (3) ONE short caption only (top)
-            st.caption(
-                "**What these mean:** Final (used) is the prediction selected by the model’s routing logic. "
-                "Short/Long are alternative estimates under the short vs long duration regime."
-            )
-
             st.divider()
 
             # ===== Tabs below results (2) =====
@@ -1470,8 +1464,7 @@ with t1:
                             st.success("Routing outcome: confidence ≥ cutoff → Long model selected.")
                         else:
                             st.info("Routing outcome: confidence < cutoff → Short model selected.")
-                        st.caption(f"(confidence: {p_long*100:.1f}%, cutoff: {tau_prob*100:.1f}%)")
-
+                        
             with tab_debug:
                 # Keep debug clean: do NOT show force_long unless you want it
                 st.json(

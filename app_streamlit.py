@@ -1268,6 +1268,50 @@ with t1:
 
         tender_supplyType = st.selectbox("Supply type", ["WORKS", "SUPPLIES", "SERVICES"])
 
+        # CPV block moved HERE (under Supply type, left column)
+        st.markdown("#### Tender CPV category")
+
+        def cpv_label(code: str) -> str:
+            c = str(code).strip()
+            div = c[:2].zfill(2)
+            name = CPV_MAPPING.get(div, "CPV")
+            return f"{c} — {name}"
+
+        cpv_codes = [
+            "45200000", "45100000", "30200000", "33100000", "09100000",
+            "71300000", "80500000", "72000000", "90400000", "34900000",
+            "79900000", "50500000",
+        ]
+        cpv_mode = st.selectbox("Main CPV", ["Custom…"] + [cpv_label(c) for c in cpv_codes], index=1)
+        tender_mainCpv = (
+            st.text_input("Enter CPV code (8 digits)", "45200000")
+            if cpv_mode == "Custom…" else cpv_mode.split(" — ")[0]
+        )
+
+        def infer_supply_from_cpv(cpv: str) -> str:
+            c = "".join(ch for ch in str(cpv) if ch.isdigit())[:8].ljust(2, "0")
+            div = int(c[:2]) if c[:2].isdigit() else -1
+            if div == 45:
+                return "WORKS"
+            if 3 <= div <= 44:
+                return "SUPPLIES"
+            if div >= 50:
+                return "SERVICES"
+            return "UNKNOWN"
+
+        inferred_supply = infer_supply_from_cpv(tender_mainCpv)
+        need_fix = inferred_supply != "UNKNOWN" and inferred_supply != tender_supplyType
+        fix_on = st.toggle(f"Auto-fix supply type to {inferred_supply}", value=True) if need_fix else False
+        if need_fix and not fix_on:
+            st.error("Supply type and CPV disagree. Enable Auto-fix or change one of them to continue.")
+            st.stop()
+        if fix_on:
+            tender_supplyType = inferred_supply
+
+        # OPTIONAL: keep ONLY if you still want the demo override.
+        # If you don't want it at all: delete this toggle + delete the override block below.
+        force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
+
     with col2:
         tender_year = st.number_input("Year", value=2023, step=1)
         if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
@@ -1289,48 +1333,6 @@ with t1:
         tau_val = st.number_input("τ (threshold, days)", 100, 1200, 720)
 
     st.divider()
-    st.markdown("#### Tender CPV category")
-
-    def cpv_label(code: str) -> str:
-        c = str(code).strip()
-        div = c[:2].zfill(2)
-        name = CPV_MAPPING.get(div, "CPV")
-        return f"{c} — {name}"
-
-    cpv_codes = [
-        "45200000", "45100000", "30200000", "33100000", "09100000",
-        "71300000", "80500000", "72000000", "90400000", "34900000",
-        "79900000", "50500000",
-    ]
-    cpv_mode = st.selectbox("Main CPV", ["Custom…"] + [cpv_label(c) for c in cpv_codes], index=1)
-    tender_mainCpv = (
-        st.text_input("Enter CPV code (8 digits)", "45200000")
-        if cpv_mode == "Custom…" else cpv_mode.split(" — ")[0]
-    )
-
-    def infer_supply_from_cpv(cpv: str) -> str:
-        c = "".join(ch for ch in str(cpv) if ch.isdigit())[:8].ljust(2, "0")
-        div = int(c[:2]) if c[:2].isdigit() else -1
-        if div == 45:
-            return "WORKS"
-        if 3 <= div <= 44:
-            return "SUPPLIES"
-        if div >= 50:
-            return "SERVICES"
-        return "UNKNOWN"
-
-    inferred_supply = infer_supply_from_cpv(tender_mainCpv)
-    need_fix = inferred_supply != "UNKNOWN" and inferred_supply != tender_supplyType
-    fix_on = st.toggle(f"Auto-fix supply type to {inferred_supply}", value=True) if need_fix else False
-    if need_fix and not fix_on:
-        st.error("Supply type and CPV disagree. Enable Auto-fix or change one of them to continue.")
-        st.stop()
-    if fix_on:
-        tender_supplyType = inferred_supply
-
-    # OPTIONAL: keep ONLY if you still want the demo override.
-    # If you don't want it at all: delete this toggle + delete the override block below.
-    force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
 
     left, right = st.columns([1, 3])
     with left:
@@ -1386,7 +1388,6 @@ with t1:
             flag = bool(res.get("risk_flag", pred >= tau_days))
 
             # OPTIONAL: keep this ONLY if you still want the demo override
-            # If you don't want it at all, delete the toggle earlier + delete this whole block.
             if force_long and (pl is not None):
                 pred = pl
                 stage = "long_reg (forced)"
@@ -1413,7 +1414,7 @@ with t1:
 
             st.divider()
 
-            # ===== Tabs below results (2) =====
+            # ===== Tabs below results (3) =====
             tab_explain, tab_signals, tab_debug = st.tabs(["ℹ️ Explanation", "📊 Model signals", "🧪 Debug"])
 
             with tab_explain:
@@ -1438,19 +1439,16 @@ with t1:
                 st.markdown("### Routing signal (confidence vs cutoff)")
                 st.caption("This is the signal the router uses to decide whether to use the Long model.")
 
-                # Show probability clearly
                 st.metric(
                     "Confidence of long-duration regime",
                     "—" if not np.isfinite(p_long) else f"{p_long*100:.1f}%",
                 )
 
-                # Show cutoff clearly (avoid raw variable names)
                 if np.isfinite(tau_prob):
                     st.metric("Routing cutoff", f"{tau_prob*100:.1f}%")
                 else:
                     st.metric("Routing cutoff", "—")
 
-                # Model choice line (ONLY here, as requested)
                 if stage == "long_reg (forced)":
                     st.warning("Model choice: Long model (manual override).")
                 else:
@@ -1464,9 +1462,8 @@ with t1:
                             st.success("Routing outcome: confidence ≥ cutoff → Long model selected.")
                         else:
                             st.info("Routing outcome: confidence < cutoff → Short model selected.")
-                        
+
             with tab_debug:
-                # Keep debug clean: do NOT show force_long unless you want it
                 st.caption("Raw API response")
                 st.json(res)
 
@@ -1474,6 +1471,7 @@ with t1:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
             st.error(f"Prediction failed: {e}")
+
 
 # ================== Tab 2: Batch from CSV ==================
 with t2:

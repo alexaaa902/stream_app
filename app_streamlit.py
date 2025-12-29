@@ -8,6 +8,10 @@ import streamlit as st
 import requests
 import traceback
 
+import streamlit as st
+st.warning("RUNNING: stream_app/app_streamlit.py — BUILD 2025-12-29")
+
+
 # ---------- helpers ----------
 def _slug(s: str) -> str:
     return re.sub(r'[^a-z0-9]+', '_', str(s).lower()).strip('_')

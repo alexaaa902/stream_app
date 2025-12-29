@@ -1467,19 +1467,6 @@ with t1:
                         
             with tab_debug:
                 # Keep debug clean: do NOT show force_long unless you want it
-                st.json(
-                    {
-                        "predicted_days_final_used": pred,
-                        "tau_days": tau_days,
-                        "stage_used": stage,
-                        "pred_short": ps,
-                        "pred_long": pl,
-                        "risk_flag": flag,
-                        "p_long": p_long,
-                        "tau_prob": tau_prob,
-                        "build": res.get("build", None),
-                    }
-                )
                 st.caption("Raw API response")
                 st.json(res)
 

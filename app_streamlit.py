@@ -1269,7 +1269,6 @@ with t1:
         tender_supplyType = st.selectbox("Supply type", ["WORKS", "SUPPLIES", "SERVICES"])
 
         # CPV block moved HERE (under Supply type, left column)
-        st.markdown("#### Tender CPV category")
 
         def cpv_label(code: str) -> str:
             c = str(code).strip()

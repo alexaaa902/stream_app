@@ -1309,7 +1309,7 @@ with t1:
 
         # OPTIONAL: keep ONLY if you still want the demo override.
         # If you don't want it at all: delete this toggle + delete the override block below.
-        force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
+        # force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
 
     with col2:
         tender_year = st.number_input("Year", value=2023, step=1)

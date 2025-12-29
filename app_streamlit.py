@@ -1323,8 +1323,8 @@ with t1:
     if fix_on:
         tender_supplyType = inferred_supply
 
-    # ✅ Optional demo: force long model in UI (override router)
-    # (must be defined BEFORE clicking Predict, but applied AFTER we parse API response)
+    # OPTIONAL: keep ONLY if you still want the demo override.
+    # If you don't want it at all: delete this toggle + delete the override block below.
     force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
 
     left, right = st.columns([1, 3])
@@ -1375,57 +1375,100 @@ with t1:
             ps = float(ps) if ps is not None else None
             pl = float(pl) if pl is not None else None
 
+            p_long = float(res.get("p_long", float("nan")))
+            tau_prob = float(res.get("tau_prob", float("nan")))
+
             flag = bool(res.get("risk_flag", pred >= tau_days))
 
-            # ✅ APPLY FORCE-LONG OVERRIDE HERE (after parsing)
+            # OPTIONAL: keep this ONLY if you still want the demo override
+            # If you don't want it at all, delete the toggle earlier + delete this whole block.
             if force_long and (pl is not None):
                 pred = pl
                 stage = "long_reg (forced)"
                 flag = bool(pred >= tau_days)
 
-            # ====== Nice top summary (3 numbers) ======
-            c1, c2, c3 = st.columns(3)
+            # ====== Top summary (4 metrics) ======
+            c1, c2, c3, c4 = st.columns(4)
+
             with c1:
-                st.metric("Final (used) days", f"{pred:,.0f}")
+                st.metric("Final (used) days", "—" if not np.isfinite(pred) else f"{pred:,.0f}")
                 st.caption(f"Threshold τ = {tau_days:,.0f} days")
+
             with c2:
                 st.metric("Short estimate", "—" if ps is None else f"{ps:,.0f}")
-                st.caption("pred_short (short model)")
+                st.caption("Assuming the short-duration regime")
+
             with c3:
                 st.metric("Long estimate", "—" if pl is None else f"{pl:,.0f}")
-                st.caption("pred_long (long model)")
+                st.caption("Assuming the long-duration regime")
 
-            # ====== Risk + explanation (WHY) ======
+            with c4:
+                st.metric("Long-duration probability", "—" if not np.isfinite(p_long) else f"{p_long*100:.1f}%")
+                st.caption("Confidence this case belongs to the long-duration regime")
+
+            # (3) ONE short caption only (top)
+            st.caption(
+                "**What these mean:** Final (used) is the prediction selected by the model’s routing logic. "
+                "Short/Long are alternative estimates under the short vs long duration regime."
+            )
+
             st.divider()
 
-            # Progress bar vs threshold (clamped)
-            if tau_days > 0 and np.isfinite(pred):
-                ratio = pred / tau_days
-                st.progress(min(max(ratio, 0.0), 2.0) / 2.0)  # 0..2 mapped to 0..1
-                st.caption(f"{ratio:.2f} × τ (pred / τ)")
+            # ===== Tabs below results (2) =====
+            tab_explain, tab_signals, tab_debug = st.tabs(["ℹ️ Explanation", "📊 Model signals", "🧪 Debug"])
 
-            # WHY message (router logic + forced override)
-            if stage == "long_reg (forced)":
-                st.warning("LONG model forced by UI override (Force long).")
-            elif stage == "short_reg":
-                if ps is not None:
-                    st.success(f"SHORT selected because p_long={res.get('p_long'):.3f} < τ_prob={res.get('tau_prob'):.3f}.")
+            with tab_explain:
+                st.markdown(
+                    "**What these estimates mean**\n\n"
+                    "- **Final (used):** the prediction the model actually selected via its routing logic.\n"
+                    "- **Short estimate:** prediction assuming a short-duration regime.\n"
+                    "- **Long estimate:** prediction assuming a long-duration regime.\n"
+                )
+
+                st.markdown("**How the model chooses Short vs Long**")
+                if stage == "long_reg (forced)":
+                    st.warning("Long model used because manual override is enabled.")
                 else:
-                    st.success("SHORT (stage_used=short_reg)is used")
-            elif stage == "long_reg":
-                if ps is not None:
-                    st.warning(f"LONG selected because p_long={res.get('p_long'):.3f} ≥ τ_prob={res.get('tau_prob'):.3f}.")
+                    st.info(
+                        "The model chooses between two specialized predictors. "
+                        "It uses the **Long** model only when it is sufficiently confident the case belongs to the "
+                        "**long-duration regime**; otherwise it uses the **Short** model."
+                    )
+
+            with tab_signals:
+                st.markdown("### Routing signal (confidence vs cutoff)")
+                st.caption("This is the signal the router uses to decide whether to use the Long model.")
+
+                # Show probability clearly
+                st.metric(
+                    "Confidence of long-duration regime",
+                    "—" if not np.isfinite(p_long) else f"{p_long*100:.1f}%",
+                )
+
+                # Show cutoff clearly (avoid raw variable names)
+                if np.isfinite(tau_prob):
+                    st.metric("Routing cutoff", f"{tau_prob*100:.1f}%")
                 else:
-                    st.warning("LONG (stage_used=long_reg) is used")
-            else:
-                st.info(f"stage_used={stage}")
+                    st.metric("Routing cutoff", "—")
 
-            st.markdown("### Risk")
-            st.write("**HIGH**" if flag else "**LOW**")
-            st.caption("Final (used) compared to τ")
+                # Model choice line (ONLY here, as requested)
+                if stage == "long_reg (forced)":
+                    st.warning("Model choice: Long model (manual override).")
+                else:
+                    used = "Long model" if stage.startswith("long_reg") else "Short model"
+                    st.info(
+                        f"Model choice: **{used}**. "
+                        f"The Long model is selected only when confidence is above the routing cutoff."
+                    )
+                    if np.isfinite(p_long) and np.isfinite(tau_prob):
+                        if p_long >= tau_prob:
+                            st.success("Routing outcome: confidence ≥ cutoff → Long model selected.")
+                        else:
+                            st.info("Routing outcome: confidence < cutoff → Short model selected.")
+                        st.caption(f"(confidence: {p_long*100:.1f}%, cutoff: {tau_prob*100:.1f}%)")
 
-            # ====== Optional: keep details but not scary ======
-            with st.expander("Details (debug)"):
+            with tab_debug:
+                # Keep debug clean: do NOT show force_long unless you want it
                 st.json(
                     {
                         "predicted_days_final_used": pred,
@@ -1433,20 +1476,20 @@ with t1:
                         "stage_used": stage,
                         "pred_short": ps,
                         "pred_long": pl,
-                        "force_long": force_long,
                         "risk_flag": flag,
-                        "p_long": res.get("p_long", None),
-                        "tau_prob": res.get("tau_prob", None),
+                        "p_long": p_long,
+                        "tau_prob": tau_prob,
                         "build": res.get("build", None),
                     }
                 )
+                st.caption("Raw API response")
+                st.json(res)
 
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
         except Exception as e:
             st.error(f"Prediction failed: {e}")
-            st.code(traceback.format_exc())
-            st.stop()
+
 # ================== Tab 2: Batch from CSV ==================
 with t2:
     if not can_batch:

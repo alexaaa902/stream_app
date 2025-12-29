@@ -1387,10 +1387,10 @@ with t1:
             flag = bool(res.get("risk_flag", pred >= tau_days))
 
             # OPTIONAL: keep this ONLY if you still want the demo override
-            if force_long and (pl is not None):
-                pred = pl
-                stage = "long_reg (forced)"
-                flag = bool(pred >= tau_days)
+            #if force_long and (pl is not None):
+             #   pred = pl
+              #  stage = "long_reg (forced)"
+               # flag = bool(pred >= tau_days)
 
             # ====== Top summary (4 metrics) ======
             c1, c2, c3, c4 = st.columns(4)

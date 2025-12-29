@@ -8,7 +8,8 @@ import streamlit as st
 import requests
 import traceback
 
-import streamlit as st
+st.set_page_config(page_title="Risk alerts & summaries — ProcureSight", layout="wide")
+
 st.warning("RUNNING: stream_app/app_streamlit.py — BUILD 2025-12-29")
 
 

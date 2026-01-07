@@ -1249,6 +1249,9 @@ with t1:
     col1, col2 = st.columns(2)
     country_opts = sorted(COUNTRY_MAP.keys())
 
+    #  Fixed business definition of "long"
+    LONG_DAYS = 720
+
     with col1:
         tender_country = st.selectbox(
             "Country (tender_country)",
@@ -1267,8 +1270,6 @@ with t1:
         tender_procedureType = PROC_REV[proc_label_sel]
 
         tender_supplyType = st.selectbox("Supply type", ["WORKS", "SUPPLIES", "SERVICES"])
-
-        # CPV block moved HERE (under Supply type, left column)
 
         def cpv_label(code: str) -> str:
             c = str(code).strip()
@@ -1307,10 +1308,6 @@ with t1:
         if fix_on:
             tender_supplyType = inferred_supply
 
-        # OPTIONAL: keep ONLY if you still want the demo override.
-        # If you don't want it at all: delete this toggle + delete the override block below.
-        # force_long = st.toggle("🔧 Demo: Force long model (override router)", value=False)
-
     with col2:
         tender_year = st.number_input("Year", value=2023, step=1)
         if not (MIN_SINGLE_YEAR <= tender_year <= MAX_SINGLE_YEAR):
@@ -1329,7 +1326,19 @@ with t1:
         if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
             st.warning(f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} for this demo.")
 
-        tau_val = st.number_input("τ (threshold, days)", 100, 1200, 720)
+        # ✅ User controls CONFIDENCE cutoff (router), not days
+        conf_cutoff = st.slider(
+            "Confidence cutoff for Long routing",
+            min_value=0.50, max_value=0.80,
+            value=0.686, step=0.01,
+            help="Long model is used only if P(long≥720) ≥ cutoff. (720 days is fixed.)"
+        )
+        if conf_cutoff < 0.55:
+            st.warning("Very low cutoff → many cases will be flagged as long (more false alarms).")
+        if conf_cutoff > 0.78:
+            st.warning("Very high cutoff → you may miss long cases (more false negatives).")
+
+        st.caption(f"Long definition is fixed: duration ≥ {LONG_DAYS} days")
 
     st.divider()
 
@@ -1369,12 +1378,12 @@ with t1:
         }
 
         try:
-            res = api_predict(payload, tau=float(tau_val))
+            # ✅ Do NOT send days-threshold to API; we keep 720 fixed and route by user confidence cutoff
+            res = api_predict(payload, tau=None)
 
             # ====== Parse fields safely ======
-            pred = float(res.get("predicted_days", float("nan")))
-            tau_days = float(res.get("tau_days", tau_val))  # prefer what API says
-            stage = str(res.get("stage_used", "—"))
+            pred_api = float(res.get("predicted_days", float("nan")))  # what API would have used (its own router)
+            stage_api = str(res.get("stage_used", "—"))
 
             ps = res.get("pred_short", None)
             pl = res.get("pred_long", None)
@@ -1382,22 +1391,26 @@ with t1:
             pl = float(pl) if pl is not None else None
 
             p_long = float(res.get("p_long", float("nan")))
-            tau_prob = float(res.get("tau_prob", float("nan")))
 
-            flag = bool(res.get("risk_flag", pred >= tau_days))
+            # ====== USER-DRIVEN ROUTING (always consistent with cutoff) ======
+            use_long = bool(np.isfinite(p_long) and (p_long >= float(conf_cutoff)))
 
-            # OPTIONAL: keep this ONLY if you still want the demo override
-            #if force_long and (pl is not None):
-             #   pred = pl
-              #  stage = "long_reg (forced)"
-               # flag = bool(pred >= tau_days)
+            if use_long and (pl is not None):
+                pred_used = float(pl)
+                stage_used = "long_reg (user cutoff)"
+            else:
+                # prefer explicit short estimate; fallback to API final if needed
+                pred_used = float(ps) if ps is not None else float(pred_api)
+                stage_used = "short_reg (user cutoff)"
+
+            risk_flag = bool(use_long)
 
             # ====== Top summary (4 metrics) ======
             c1, c2, c3, c4 = st.columns(4)
 
             with c1:
-                st.metric("Final (used) days", "—" if not np.isfinite(pred) else f"{pred:,.0f}")
-                st.caption(f"Threshold τ = {tau_days:,.0f} days")
+                st.metric("Final (used) days", "—" if not np.isfinite(pred_used) else f"{pred_used:,.0f}")
+                st.caption(f"Long definition: ≥ {LONG_DAYS} days (fixed)")
 
             with c2:
                 st.metric("Short estimate", "—" if ps is None else f"{ps:,.0f}")
@@ -1419,20 +1432,16 @@ with t1:
             with tab_explain:
                 st.markdown(
                     "**What these estimates mean**\n\n"
-                    "- **Final (used):** the prediction the model actually selected via its routing logic.\n"
+                    "- **Final (used):** the prediction selected using the **user confidence cutoff**.\n"
                     "- **Short estimate:** prediction assuming a short-duration regime.\n"
                     "- **Long estimate:** prediction assuming a long-duration regime.\n"
                 )
-
                 st.markdown("**How the model chooses Short vs Long**")
-                if stage == "long_reg (forced)":
-                    st.warning("Long model used because manual override is enabled.")
-                else:
-                    st.info(
-                        "The model chooses between two specialized predictors. "
-                        "It uses the **Long** model only when it is sufficiently confident the case belongs to the "
-                        "**long-duration regime**; otherwise it uses the **Short** model."
-                    )
+                st.info(
+                    f"The model computes **P(long≥{LONG_DAYS})**. "
+                    f"If that probability is **≥ {conf_cutoff*100:.1f}%**, it uses the **Long** model; "
+                    "otherwise it uses the **Short** model."
+                )
 
             with tab_signals:
                 st.markdown("### Routing signal (confidence vs cutoff)")
@@ -1442,29 +1451,37 @@ with t1:
                     "Confidence of long-duration regime",
                     "—" if not np.isfinite(p_long) else f"{p_long*100:.1f}%",
                 )
+                st.metric("Routing cutoff (user)", f"{conf_cutoff*100:.1f}%")
 
-                if np.isfinite(tau_prob):
-                    st.metric("Routing cutoff", f"{tau_prob*100:.1f}%")
-                else:
-                    st.metric("Routing cutoff", "—")
+                used_lbl = "Long model" if stage_used.startswith("long_reg") else "Short model"
+                st.info(
+                    f"Model choice: **{used_lbl}**. "
+                    f"Long model is selected only when confidence is above the user cutoff."
+                )
+                if np.isfinite(p_long):
+                    if p_long >= float(conf_cutoff):
+                        st.success("Routing outcome: confidence ≥ cutoff → Long model selected.")
+                    else:
+                        st.info("Routing outcome: confidence < cutoff → Short model selected.")
 
-                if stage == "long_reg (forced)":
-                    st.warning("Model choice: Long model (manual override).")
-                else:
-                    used = "Long model" if stage.startswith("long_reg") else "Short model"
-                    st.info(
-                        f"Model choice: **{used}**. "
-                        f"The Long model is selected only when confidence is above the routing cutoff."
-                    )
-                    if np.isfinite(p_long) and np.isfinite(tau_prob):
-                        if p_long >= tau_prob:
-                            st.success("Routing outcome: confidence ≥ cutoff → Long model selected.")
-                        else:
-                            st.info("Routing outcome: confidence < cutoff → Short model selected.")
+                # Optional extra clarity:
+                st.caption(f"stage_used = {stage_used} | risk_flag = {risk_flag}")
 
             with tab_debug:
                 st.caption("Raw API response")
                 st.json(res)
+
+                # Helpful debug comparison (optional)
+                st.caption("API routing vs user routing (diagnostic):")
+                st.json({
+                    "api_predicted_days": pred_api,
+                    "api_stage_used": stage_api,
+                    "user_cutoff": float(conf_cutoff),
+                    "user_use_long": use_long,
+                    "final_used_days_user": pred_used,
+                    "stage_used_user": stage_used,
+                    "risk_flag_user": risk_flag
+                })
 
         except requests.HTTPError as e:
             st.error(f"API error: {e.response.status_code} — {e.response.text}")
@@ -1491,7 +1508,13 @@ with t2:
         )
         col_a, col_b = st.columns([1, 1])
         with col_a:
-            tau_batch = st.number_input("Override τ (batch, days)", 100, 1200, 720, step=10)
+            # ✅ Confidence cutoff (batch), not days
+            conf_cutoff_batch = st.slider(
+                "Confidence cutoff for Long routing (batch)",
+                min_value=0.50, max_value=0.80,
+                value=0.686, step=0.01,
+                help=f"Rows are flagged as high-risk if P(long≥{LONG_DAYS}) ≥ cutoff."
+            )
         with col_b:
             top_k = st.number_input("Top-K (charts)", min_value=5, max_value=50, value=12, step=1)
 
@@ -1503,13 +1526,11 @@ with t2:
             """
             feat_path = "procuresight_api/model/features.json"
 
-            # --- read feature list safely ---
             feat_cols = None
             if os.path.exists(feat_path):
                 try:
                     with open(feat_path, "r", encoding="utf-8") as f:
                         FEATS = json.load(f)
-
                     feat_cols = (
                         FEATS.get("features")
                         or FEATS.get("feature_columns")
@@ -1521,24 +1542,19 @@ with t2:
             if not feat_cols:
                 feat_cols = list(df_src.columns)
 
-            # 🔒 hard stop: never allow target_duration
             feat_cols = [c for c in feat_cols if c != "target_duration"]
 
             rows: list[dict] = []
             for _, r in df_src.iterrows():
                 d = {c: r[c] for c in feat_cols if c in df_src.columns}
-
-                # double safety
                 d.pop("target_duration", None)
 
-                # --- normalize country codes ---
                 if "tender_country" in d and pd.notna(d["tender_country"]):
                     d["tender_country"] = str(d["tender_country"]).upper().strip()
 
                 if "buyer_country" in d and pd.notna(d["buyer_country"]):
                     d["buyer_country"] = str(d["buyer_country"]).upper().strip()
 
-                # --- normalize CPV ---
                 if "tender_mainCpv" in d and pd.notna(d["tender_mainCpv"]):
                     cpv = str(d["tender_mainCpv"]).strip()
                     if cpv.endswith(".0"):
@@ -1546,7 +1562,6 @@ with t2:
                     cpv = "".join(ch for ch in cpv if ch.isdigit())[:8]
                     d["tender_mainCpv"] = cpv
 
-                # --- add logs ONLY if model expects them ---
                 if "tender_estimatedPrice_EUR_log" in feat_cols:
                     base = pd.to_numeric(d.get("tender_estimatedPrice_EUR"), errors="coerce")
                     d["tender_estimatedPrice_EUR_log"] = None if pd.isna(base) else float(np.log1p(base))
@@ -1559,7 +1574,6 @@ with t2:
 
             return rows
 
-        # ---- display + call API ----
         with st.expander("Preview & send", expanded=True):
             try:
                 df_in = df_raw.copy()
@@ -1589,11 +1603,7 @@ with t2:
                             s = s * 100.0
                         prev["Risk %"] = s.map(lambda v: f"{v:.2f}%")
                         prev.drop(
-                            columns=[
-                                c
-                                for c in ["Risk%", "RiskPct", "risk_pct", "risk%"]
-                                if c in prev.columns
-                            ],
+                            columns=[c for c in ["Risk%", "RiskPct", "risk_pct", "risk%"] if c in prev.columns],
                             inplace=True,
                             errors="ignore",
                         )
@@ -1603,18 +1613,27 @@ with t2:
                 st.dataframe(prev, use_container_width=True)
 
                 rows = _prepare_rows(df_in)
-                rows = rows_json_safe_from_list(rows)  # NaN/±inf -> None
-                preds = api_predict_batch(rows, tau=float(tau_batch) if tau_batch else None)
+                rows = rows_json_safe_from_list(rows)
+                # ✅ Do not send days-threshold; batch risk will be computed from p_long + cutoff
+                preds = api_predict_batch(rows, tau=None)
                 df_out = pd.concat([df_in.reset_index(drop=True), pd.DataFrame(preds)], axis=1)
 
                 if "predicted_days" in df_out.columns:
                     st.divider()
                     st.subheader("Quick rankings on batch predictions")
+
                     df_rank_src = derive_labels(df_out.copy())
-                    tau_used = float(tau_batch) if tau_batch else 720.0
-                    df_rank_src["risk_flag"] = pd.to_numeric(
-                        df_rank_src["predicted_days"], errors="coerce"
-                    ) >= tau_used
+
+                    # ✅ risk_flag = P(long≥720) >= cutoff (preferred)
+                    if "p_long" in df_rank_src.columns:
+                        p = pd.to_numeric(df_rank_src["p_long"], errors="coerce")
+                        df_rank_src["risk_flag"] = p >= float(conf_cutoff_batch)
+                    elif "p_long_ge720" in df_rank_src.columns:
+                        p = pd.to_numeric(df_rank_src["p_long_ge720"], errors="coerce")
+                        df_rank_src["risk_flag"] = p >= float(conf_cutoff_batch)
+                    else:
+                        # fallback
+                        df_rank_src["risk_flag"] = pd.to_numeric(df_rank_src["predicted_days"], errors="coerce") >= LONG_DAYS
 
                     def _all_unknown(df: pd.DataFrame, cols) -> bool:
                         if cols is None:
@@ -1730,17 +1749,22 @@ with t2:
                     "Your original data is shown together with the new predictions — ready to review or download."
                 )
                 df_show = df_out.copy()
+
                 if "predicted_days" in df_show.columns:
                     df_show["Predicted days"] = (
                         pd.to_numeric(df_show["predicted_days"], errors="coerce").round().astype("Int64")
                     )
-                if "risk_flag" in df_show.columns:
+
+                # ✅ derive High-risk? from p_long cutoff (preferred), else fallback
+                if "p_long" in df_show.columns:
+                    p = pd.to_numeric(df_show["p_long"], errors="coerce")
+                    df_show["High-risk?"] = (p >= float(conf_cutoff_batch)).map({True: "Yes", False: "No"})
+                elif "risk_flag" in df_show.columns:
                     df_show["High-risk?"] = df_show["risk_flag"].map({True: "Yes", False: "No"})
-                if "RiskPct" in df_show.columns:
-                    rp = pd.to_numeric(df_show["RiskPct"], errors="coerce")
-                    if pd.notna(rp.max()) and rp.max() <= 1.5:
-                        rp = rp * 100.0
-                    df_show["Risk %"] = rp.map(lambda v: f"{v:.2f}%")
+                else:
+                    df_show["High-risk?"] = (
+                        pd.to_numeric(df_show.get("predicted_days", np.nan), errors="coerce") >= LONG_DAYS
+                    ).map({True: "Yes", False: "No"})
 
                 show_rename = {
                     "tender_procedureType": "Procedure (raw)",
@@ -1755,6 +1779,7 @@ with t2:
                 }
                 df_show.rename(columns=show_rename, inplace=True)
                 df_show = friendly_rename_df(df_show)
+
                 for c in ["RiskPct", "Risk%", "predicted_days", "risk_flag"]:
                     if c in df_show.columns:
                         df_show.drop(columns=[c], inplace=True, errors="ignore")
@@ -1769,7 +1794,6 @@ with t2:
                         "Country code",
                         "CPV Group",
                         "CPV Division",
-                        "Risk %",
                         "Predicted days",
                         "High-risk?",
                         "model_used",
@@ -1816,6 +1840,7 @@ with t2:
                         mime="text/csv",
                         use_container_width=True,
                     )
+
             except requests.HTTPError as e:
                 st.error(
                     f"API error: {e.status_code if hasattr(e, 'status_code') else ''} — "
@@ -1837,7 +1862,8 @@ with t3:
         except Exception as e:
             kpi_card("API reachability", "No", str(e))
     with cols[1]:
-        kpi_card("τ (default)", f"{int(st.session_state.get('tau', 720))}", "UI setting")
+        # reflect fixed business threshold (not user-editable)
+        kpi_card("Long threshold (fixed)", f"{LONG_DAYS}", "days")
     with cols[2]:
         kpi_card("Theme", BRAND["name"], "ProcureSight")
     with st.expander("GET / payload"):
@@ -1856,3 +1882,4 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+

@@ -1339,15 +1339,15 @@ with t1:
         # User controls CONFIDENCE cutoff (router), not days
         conf_cutoff = st.slider(
             "Confidence cutoff for Long routing",
-            min_value=0.20,
-            max_value=0.90,
+            min_value=0.10,
+            max_value=0.95,
             value=0.50,
             step=0.01,
             help=f"Long model is used only if P(long≥{LONG_DAYS}) ≥ cutoff. ({LONG_DAYS} days is fixed.)",
         )
-        if conf_cutoff < 0.25:
+        if conf_cutoff < 0.15:
             st.warning("Very low cutoff → many cases will be flagged as long (more false alarms).")
-        if conf_cutoff > 0.85:
+        if conf_cutoff > 0.90:
             st.warning("Very high cutoff → you may miss long cases (more false negatives).")
 
         st.caption(f"Long definition is fixed: duration ≥ {LONG_DAYS} days")
@@ -1531,7 +1531,7 @@ with t2:
             # ✅ Confidence cutoff (batch), not days
             conf_cutoff_batch = st.slider(
                 "Confidence cutoff for Long routing (batch)",
-                min_value=0.20, max_value=0.90,
+                min_value=0.10, max_value=0.95,
                 value=0.50, step=0.01,
                 help=f"Rows are flagged as high-risk if P(long≥{LONG_DAYS}) ≥ cutoff."
             )

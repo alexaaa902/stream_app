@@ -1345,9 +1345,9 @@ with t1:
             step=0.01,
             help=f"Long model is used only if P(long≥{LONG_DAYS}) ≥ cutoff. ({LONG_DAYS} days is fixed.)",
         )
-        if conf_cutoff < 0.35:
+        if conf_cutoff < 0.25:
             st.warning("Very low cutoff → many cases will be flagged as long (more false alarms).")
-        if conf_cutoff > 0.75:
+        if conf_cutoff > 0.85:
             st.warning("Very high cutoff → you may miss long cases (more false negatives).")
 
         st.caption(f"Long definition is fixed: duration ≥ {LONG_DAYS} days")
@@ -1459,7 +1459,7 @@ with t1:
                 )
                 st.markdown("**How the model chooses Short vs Long**")
                 st.info(
-                    f"The model computes **P(long≥{LONG_DAYS})**. "
+                    f"The model computes estimates how likely it is that this tender will eventually last at least 720 days, based on the information available"
                     f"If that probability is **≥ {conf_cutoff*100:.1f}%**, it uses the **Long** model; "
                     "otherwise it uses the **Short** model."
                 )

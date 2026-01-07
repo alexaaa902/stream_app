@@ -1474,7 +1474,7 @@ with t1:
                 used_lbl = "Long model" if stage_used.startswith("long_reg") else ("Short model" if stage_used.startswith("short_reg") else "API fallback")
                 st.info(
                     f"Model choice: **{used_lbl}**. "
-                    f"Long model is selected only when confidence is above the user cutoff."
+                    f"Long model is selected when the estimated likelihood of a long duration exceeds the confidence level chosen by the user."
                 )
 
                 if np.isfinite(p_long):

@@ -1249,8 +1249,18 @@ with t1:
     col1, col2 = st.columns(2)
     country_opts = sorted(COUNTRY_MAP.keys())
 
-    #  Fixed business definition of "long"
+    # Fixed business definition of "long"
     LONG_DAYS = 720
+
+    def _first_finite(*vals):
+        for v in vals:
+            try:
+                x = float(v)
+                if np.isfinite(x):
+                    return x
+            except Exception:
+                pass
+        return float("nan")
 
     with col1:
         tender_country = st.selectbox(
@@ -1326,16 +1336,18 @@ with t1:
         if not (MIN_SINGLE_BIDS <= lot_bidsCount <= MAX_SINGLE_BIDS):
             st.warning(f"Bids count should be between {MIN_SINGLE_BIDS} and {MAX_SINGLE_BIDS} for this demo.")
 
-        # ✅ User controls CONFIDENCE cutoff (router), not days
+        # User controls CONFIDENCE cutoff (router), not days
         conf_cutoff = st.slider(
             "Confidence cutoff for Long routing",
-            min_value=0.50, max_value=0.80,
-            value=0.686, step=0.01,
-            help="Long model is used only if P(long≥720) ≥ cutoff. (720 days is fixed.)"
+            min_value=0.20,
+            max_value=0.90,
+            value=0.50,
+            step=0.01,
+            help=f"Long model is used only if P(long≥{LONG_DAYS}) ≥ cutoff. ({LONG_DAYS} days is fixed.)",
         )
-        if conf_cutoff < 0.55:
+        if conf_cutoff < 0.35:
             st.warning("Very low cutoff → many cases will be flagged as long (more false alarms).")
-        if conf_cutoff > 0.78:
+        if conf_cutoff > 0.75:
             st.warning("Very high cutoff → you may miss long cases (more false negatives).")
 
         st.caption(f"Long definition is fixed: duration ≥ {LONG_DAYS} days")
@@ -1378,34 +1390,44 @@ with t1:
         }
 
         try:
-            # ✅ Do NOT send days-threshold to API; we keep 720 fixed and route by user confidence cutoff
+            # Do NOT send days-threshold to API; keep LONG_DAYS fixed and route by user confidence cutoff
             res = api_predict(payload, tau=None)
 
-            # ====== Parse fields safely ======
-            pred_api = float(res.get("predicted_days", float("nan")))  # what API would have used (its own router)
-            stage_api = str(res.get("stage_used", "—"))
+            # --- Pull raw fields robustly ---
+            pred_api = _first_finite(res.get("predicted_days", None), res.get("prediction", None))
+            stage_api = str(
+                res.get("stage_used", None)
+                or res.get("model_used", None)
+                or res.get("stage", None)
+                or "—"
+            )
 
-            ps = res.get("pred_short", None)
-            pl = res.get("pred_long", None)
-            ps = float(ps) if ps is not None else None
-            pl = float(pl) if pl is not None else None
+            ps = _first_finite(res.get("pred_short", None), res.get("yhat_short", None), res.get("short_pred", None))
+            pl = _first_finite(res.get("pred_long", None),  res.get("yhat_long", None),  res.get("long_pred", None))
 
-            p_long = float(res.get("p_long", float("nan")))
+            p_long = _first_finite(
+                res.get("p_long", None),
+                res.get("p_long_ge720", None),
+                res.get("p_long_ge_720", None),
+            )
 
-            # ====== USER-DRIVEN ROUTING (always consistent with cutoff) ======
+            # --- USER-DRIVEN ROUTING (always consistent with cutoff) ---
             use_long = bool(np.isfinite(p_long) and (p_long >= float(conf_cutoff)))
 
-            if use_long and (pl is not None):
+            if use_long and np.isfinite(pl):
                 pred_used = float(pl)
                 stage_used = "long_reg (user cutoff)"
-            else:
-                # prefer explicit short estimate; fallback to API final if needed
-                pred_used = float(ps) if ps is not None else float(pred_api)
+            elif (not use_long) and np.isfinite(ps):
+                pred_used = float(ps)
                 stage_used = "short_reg (user cutoff)"
+            else:
+                # Last resort fallback only if short/long estimates are missing
+                pred_used = float(pred_api)
+                stage_used = "api_final (fallback)"
 
             risk_flag = bool(use_long)
 
-            # ====== Top summary (4 metrics) ======
+            # ===== Top summary (4 metrics) =====
             c1, c2, c3, c4 = st.columns(4)
 
             with c1:
@@ -1413,11 +1435,11 @@ with t1:
                 st.caption(f"Long definition: ≥ {LONG_DAYS} days (fixed)")
 
             with c2:
-                st.metric("Short estimate", "—" if ps is None else f"{ps:,.0f}")
+                st.metric("Short estimate", "—" if not np.isfinite(ps) else f"{ps:,.0f}")
                 st.caption("Assuming the short-duration regime")
 
             with c3:
-                st.metric("Long estimate", "—" if pl is None else f"{pl:,.0f}")
+                st.metric("Long estimate", "—" if not np.isfinite(pl) else f"{pl:,.0f}")
                 st.caption("Assuming the long-duration regime")
 
             with c4:
@@ -1426,13 +1448,12 @@ with t1:
 
             st.divider()
 
-            # ===== Tabs below results (3) =====
             tab_explain, tab_signals, tab_debug = st.tabs(["ℹ️ Explanation", "📊 Model signals", "🧪 Debug"])
 
             with tab_explain:
                 st.markdown(
                     "**What these estimates mean**\n\n"
-                    "- **Final (used):** the prediction selected using the **user confidence cutoff**.\n"
+                    "- **Final (used):** selected using the **user confidence cutoff**.\n"
                     "- **Short estimate:** prediction assuming a short-duration regime.\n"
                     "- **Long estimate:** prediction assuming a long-duration regime.\n"
                 )
@@ -1447,40 +1468,39 @@ with t1:
                 st.markdown("### Routing signal (confidence vs cutoff)")
                 st.caption("This is the signal the router uses to decide whether to use the Long model.")
 
-                st.metric(
-                    "Confidence of long-duration regime",
-                    "—" if not np.isfinite(p_long) else f"{p_long*100:.1f}%",
-                )
+                st.metric("Confidence of long-duration regime", "—" if not np.isfinite(p_long) else f"{p_long*100:.1f}%")
                 st.metric("Routing cutoff (user)", f"{conf_cutoff*100:.1f}%")
 
-                used_lbl = "Long model" if stage_used.startswith("long_reg") else "Short model"
+                used_lbl = "Long model" if stage_used.startswith("long_reg") else ("Short model" if stage_used.startswith("short_reg") else "API fallback")
                 st.info(
                     f"Model choice: **{used_lbl}**. "
                     f"Long model is selected only when confidence is above the user cutoff."
                 )
+
                 if np.isfinite(p_long):
                     if p_long >= float(conf_cutoff):
                         st.success("Routing outcome: confidence ≥ cutoff → Long model selected.")
                     else:
                         st.info("Routing outcome: confidence < cutoff → Short model selected.")
 
-                # Optional extra clarity:
                 st.caption(f"stage_used = {stage_used} | risk_flag = {risk_flag}")
 
             with tab_debug:
                 st.caption("Raw API response")
                 st.json(res)
 
-                # Helpful debug comparison (optional)
                 st.caption("API routing vs user routing (diagnostic):")
                 st.json({
                     "api_predicted_days": pred_api,
                     "api_stage_used": stage_api,
                     "user_cutoff": float(conf_cutoff),
+                    "p_long_used": p_long,
                     "user_use_long": use_long,
+                    "short_estimate_used": ps,
+                    "long_estimate_used": pl,
                     "final_used_days_user": pred_used,
                     "stage_used_user": stage_used,
-                    "risk_flag_user": risk_flag
+                    "risk_flag_user": risk_flag,
                 })
 
         except requests.HTTPError as e:
@@ -1511,8 +1531,8 @@ with t2:
             # ✅ Confidence cutoff (batch), not days
             conf_cutoff_batch = st.slider(
                 "Confidence cutoff for Long routing (batch)",
-                min_value=0.50, max_value=0.80,
-                value=0.686, step=0.01,
+                min_value=0.20, max_value=0.90,
+                value=0.50, step=0.01,
                 help=f"Rows are flagged as high-risk if P(long≥{LONG_DAYS}) ≥ cutoff."
             )
         with col_b:

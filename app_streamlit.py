@@ -1459,7 +1459,7 @@ with t1:
                 )
                 st.markdown("**How the model chooses Short vs Long**")
                 st.info(
-                    f"The model computes estimates how likely it is that this tender will eventually last at least 720 days, based on the information available"
+                    f"The model estimates how likely it is that this tender will eventually last at least 720 days, based on the information available; "
                     f"If that probability is **≥ {conf_cutoff*100:.1f}%**, it uses the **Long** model; "
                     "otherwise it uses the **Short** model."
                 )

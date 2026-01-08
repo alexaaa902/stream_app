@@ -1326,7 +1326,7 @@ with t1:
         tender_estimatedPrice_EUR = st.number_input(
             "Estimated price (EUR)",
             min_value=0.0,
-            max_value=50_000_000.0,
+            max_value=10_000_000_000.0,
             value=3_000_000.0,
         )
         if tender_estimatedPrice_EUR < MIN_SINGLE_EST_PRICE:

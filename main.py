@@ -376,63 +376,70 @@ def model_info():
 
 # ---------- Predict endpoints ----------
 @app.post("/predict", response_model=PredictResponse)
-def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
+def predict(
+    req: PredictRequest,
+    tau_prob: Optional[float] = Query(
+        None, description="Probability cutoff for risk_flag (e.g., 0.686). Default: model tau from meta."
+    ),
+    tau_days: Optional[float] = Query(
+        None, description="Days threshold for reference/reporting (e.g., 720). Default: LONG_THR_DEFAULT."
+    ),
+):
     """
-    Query param:
-      - tau: DAYS threshold for risk_flag (e.g. 720)
-
-    Model internals:
-      - tau_prob: probability threshold (meta["tau"]) for routing short vs long
-      - p_long:  probability from stage-1 classifier
+    - tau_prob: controls the *risk flag* (probability-based early warning)
+    - tau_days: optional reference threshold in days (does NOT control risk_flag)
+    Internals:
+      - tau_prob_model (meta['tau']) routes short vs long regressor
+      - p_long is stage-1 probability P(long>=720)
     """
     try:
         _ensure_models_loaded()
         if not (clf and reg_short and reg_long):
             raise HTTPException(status_code=503, detail="Models not loaded")
 
-        # 1) tau_days: risk threshold in DAYS (UI param)
+        # --- defaults ---
         DEFAULT_TAU_DAYS = float(LONG_THR_DEFAULT)
-        try:
-            tau_days = float(tau) if tau is not None else DEFAULT_TAU_DAYS
-        except Exception:
-            tau_days = DEFAULT_TAU_DAYS
+        tau_days_val = DEFAULT_TAU_DAYS if tau_days is None else float(tau_days)
 
-        # 2) tau_prob: routing threshold in PROBABILITY (from training artifacts)
-        tau_prob = float(meta.get("tau", 0.5))
+        tau_prob_model = float(meta.get("tau", 0.5))  # routing threshold (training)
+        tau_prob_val = tau_prob_model if tau_prob is None else float(tau_prob)
+        tau_prob_val = float(np.clip(tau_prob_val, 0.0, 1.0))
 
-        # 3) build X
+        # 1) build X
         X = _build_dataframe(req)
 
-        # 4) align columns/order for each booster
+        # 2) align
         Xc = _align_to_booster(X.copy(), clf)
         Xs = _align_to_booster(X.copy(), reg_short)
         Xl = _align_to_booster(X.copy(), reg_long)
 
-        # 5) predict components
+        # 3) predict components
         p = float(clf.predict(Xc)[0])
         y_short = float(reg_short.predict(Xs)[0])
         y_long = float(reg_long.predict(Xl)[0])
 
-        if p is None or not math.isfinite(p):
+        if (p is None) or (not math.isfinite(p)):
             p = 0.0
 
-        # 6) combine (routing based on probability threshold)
-        yhat = _combine_hard(p, y_short, y_long, tau_prob)
+        # 4) combine (routing based on MODEL threshold, not user cutoff)
+        yhat = _combine_hard(p, y_short, y_long, tau_prob_model)
 
-        # 7) apply year-aware bump (if enabled in meta)
+        # 5) year-aware bump
         yhat = _apply_year_bump(yhat, req.tender_year)
 
-        # 8) outputs
-        stage_used = "long_reg" if (p >= tau_prob) else "short_reg"
-        risk_flag_point = (yhat >= tau_days)
+        # outputs
+        stage_used = "long_reg" if (p >= tau_prob_model) else "short_reg"
+
+        # ✅ risk flag is PROBABILITY-BASED (what you want)
+        risk_flag_point = (p >= tau_prob_val)
 
         return PredictResponse(
             predicted_days=float(yhat),
             risk_flag=bool(risk_flag_point),
             model_used="lgbm_2stage",
-            tau_days=float(tau_days),
+            tau_days=float(tau_days_val),     # reference only
             p_long=float(p),
-            tau_prob=float(tau_prob),
+            tau_prob=float(tau_prob_val),     # the cutoff used for risk_flag
             stage_used=str(stage_used),
             pred_short=float(y_short),
             pred_long=float(y_long),
@@ -443,6 +450,7 @@ def predict(req: PredictRequest, tau: Optional[float] = Query(None)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/predict_debug")

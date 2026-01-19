@@ -103,12 +103,18 @@ def _current_api_base() -> str:
     return st.session_state.get("api_base", DEFAULT_API_BASE)
 
 # 2) Χρήση ΠΑΝΤΑ με όρισμα
-def api_predict(payload: dict, tau: float | None = None) -> dict:
+def api_predict(payload: dict, tau_prob: float | None = None, tau_days: float | None = None) -> dict:
     base = get_api_base(_current_api_base())
-    params = {"tau": tau} if tau is not None else {}
+    params = {}
+    if tau_prob is not None:
+        params["tau_prob"] = tau_prob
+    if tau_days is not None:
+        params["tau_days"] = tau_days
+
     r = requests.post(f"{base}/predict", json=payload, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
+
 
 def api_predict_batch(rows: list[dict], tau: float | None = None) -> list[dict]:
     base = get_api_base(_current_api_base())

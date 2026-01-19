@@ -106,25 +106,24 @@ def _current_api_base() -> str:
 def api_predict(payload: dict, tau_prob: float | None = None, tau_days: float | None = None) -> dict:
     base = get_api_base(_current_api_base())
     params = {}
-    if tau_prob is not None:
-        params["tau_prob"] = tau_prob
-    if tau_days is not None:
-        params["tau_days"] = tau_days
-
+    if tau_prob is not None: params["tau_prob"] = tau_prob
+    if tau_days is not None: params["tau_days"] = tau_days
     r = requests.post(f"{base}/predict", json=payload, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
 
-
-def api_predict_batch(rows: list[dict], tau: float | None = None) -> list[dict]:
+def api_predict_batch(rows: list[dict], tau_prob: float | None = None, tau_days: float | None = None) -> list[dict]:
     base = get_api_base(_current_api_base())
-    params = {"tau": tau} if tau is not None else {}
-    try:
-        r = requests.post(f"{base}/predict_batch", json=rows, params=params, timeout=90)
-        if r.status_code == 404:
-            raise requests.HTTPError("batch endpoint not found", response=r)
+    params = {}
+    if tau_prob is not None: params["tau_prob"] = tau_prob
+    if tau_days is not None: params["tau_days"] = tau_days
+
+    r = requests.post(f"{base}/predict_batch", json=rows, params=params, timeout=90)
+    if r.status_code == 404:
         r.raise_for_status()
-        return r.json()
+    r.raise_for_status()
+    return r.json()
+
     except Exception:
         return [api_predict(d, tau=tau) for d in rows]
 
@@ -1642,7 +1641,8 @@ with t2:
                 rows = _prepare_rows(df_in)
                 rows = rows_json_safe_from_list(rows)
                 # ✅ Do not send days-threshold; batch risk will be computed from p_long + cutoff
-                preds = api_predict_batch(rows, tau=None)
+                #preds = api_predict_batch(rows, tau=None)
+                preds = api_predict_batch(rows, tau_prob=conf_cutoff_batch)
                 df_out = pd.concat([df_in.reset_index(drop=True), pd.DataFrame(preds)], axis=1)
 
                 if "predicted_days" in df_out.columns:

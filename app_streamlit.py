@@ -115,14 +115,27 @@ def api_predict(payload: dict, tau_prob: float | None = None, tau_days: float | 
 def api_predict_batch(rows: list[dict], tau_prob: float | None = None, tau_days: float | None = None) -> list[dict]:
     base = get_api_base(_current_api_base())
     params = {}
-    if tau_prob is not None: params["tau_prob"] = tau_prob
-    if tau_days is not None: params["tau_days"] = tau_days
+    if tau_prob is not None:
+        params["tau_prob"] = float(tau_prob)
+    if tau_days is not None:
+        params["tau_days"] = float(tau_days)
 
+    # 1) προσπάθησε /predict_batch
     r = requests.post(f"{base}/predict_batch", json=rows, params=params, timeout=90)
+
+    # 2) αν δεν υπάρχει endpoint, fallback σε /predict row-by-row
     if r.status_code == 404:
-        r.raise_for_status()
+        outs = []
+        for d in rows:
+            rr = requests.post(f"{base}/predict", json=d, params=params, timeout=20)
+            rr.raise_for_status()
+            outs.append(rr.json())
+        return outs
+
+    # 3) αλλιώς κανονικά
     r.raise_for_status()
     return r.json()
+
 
 # ========= MAPPINGS =========
 CPV_MAPPING = {

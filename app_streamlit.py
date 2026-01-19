@@ -1391,7 +1391,8 @@ with t1:
 
         try:
             # Do NOT send days-threshold to API; keep LONG_DAYS fixed and route by user confidence cutoff
-            res = api_predict(payload, tau=None)
+           #res = api_predict(payload, tau=None)
+            res = api_predict(payload, tau_prob=conf_cutoff)
 
             # --- Pull raw fields robustly ---
             pred_api = _first_finite(res.get("predicted_days", None), res.get("prediction", None))

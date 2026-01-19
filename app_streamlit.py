@@ -124,10 +124,6 @@ def api_predict_batch(rows: list[dict], tau_prob: float | None = None, tau_days:
     r.raise_for_status()
     return r.json()
 
-    except Exception:
-        return [api_predict(d, tau=tau) for d in rows]
-
-
 # ========= MAPPINGS =========
 CPV_MAPPING = {
     "03":"Agricultural products","09":"Petroleum products","14":"Mining products","15":"Food products",
